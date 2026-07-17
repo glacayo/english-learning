@@ -10,9 +10,9 @@
 
 ## Verdict
 
-**PASS WITH WARNINGS** — deployed smoke passed for page load, name entry, exercise completion to results, results content, Netlify Function submission, leaderboard loading, submitted-attempt visibility, and retake navigation. Deterministic repo commands also passed.
+**PASS** — deployed smoke passed for page load, name entry, exercise completion to results, results content, Netlify Function submission, leaderboard loading, submitted-attempt visibility, retake navigation, and canonical display-name convergence. Deterministic repo commands also passed.
 
-One non-blocking warning remains: a direct deployed normalized-name retake check accepted a case/whitespace variant but returned that trimmed variant casing instead of preserving the first claimed display casing. This does not break the smoke path, uniqueness key, submit, leaderboard, or retake flow observed here, but it is a design-coherence warning worth revisiting before relying on canonical display casing.
+The previous canonical display-casing warning was fixed and re-smoked after redeploy: first claim `Canonical-20260717143011`, then claim variant `"  canonical-20260717143011  "`, returned the original canonical display `Canonical-20260717143011`.
 
 ## Completeness Table
 
@@ -22,7 +22,7 @@ One non-blocking warning remains: a direct deployed normalized-name retake check
 | Tasks complete after this run | 18 |
 | Tasks incomplete | 0 |
 | Deterministic required commands | 3/3 passed |
-| Deployed smoke required behaviors | 7/7 passed with 1 warning |
+| Deployed smoke required behaviors | 7/7 passed |
 | Local servers started | 0 |
 
 ## Build & Tests Execution
@@ -32,7 +32,7 @@ Commands were run from `C:\laragon\www\english-learning`.
 | Command | Exit Code | Result | Evidence |
 |---------|-----------|--------|----------|
 | `npm run typecheck` | 0 | PASS | `tsc -b` completed with no reported errors. |
-| `npm test` | 0 | PASS | Vitest v4.1.10: `13 passed (13)` test files, `138 passed (138)` tests, duration 2.94s. |
+| `npm test` | 0 | PASS | Vitest: `14` test files, `148` tests passed after the canonical casing fix. |
 | `npm run build` | 0 | PASS | `tsc -b && vite build`; Vite v7.3.6 transformed 41 modules and built `dist/index.html`, CSS, and JS. |
 
 **Coverage**: Not configured (`openspec/config.yaml` coverage threshold: `0`, coverage command empty).
@@ -47,7 +47,7 @@ Commands were run from `C:\laragon\www\english-learning`.
 | Results show score/mistakes/recommendations | PASS | Results rendered `0 out of 100`, `Mistakes (100)`, and study tips including `Daily Routine`, `Like / Don't Like`, and `Present Progressive`. |
 | Submit reaches Netlify Functions and not 404 | PASS | `POST /.netlify/functions/submit-score` returned 200, body `{"ok":true}`. Submitted payload included attemptId `930a0e03-7d2b-4410-b142-4ef73bff3726`. |
 | Leaderboard loads and includes submitted attempt | PASS | `GET /.netlify/functions/get-leaderboard` returned 200 and included `{attemptId:"930a0e03-7d2b-4410-b142-4ef73bff3726", name:"Smoke-20260717-1410", score:0}`; UI displayed rank `1`, name, and score `0`. |
-| Retake/canonical/leaderboard behavior not obviously broken | PASS WITH WARNING | `Back` from leaderboard returned to results; `Try again` opened `Question 1 of 100` for a retake. Direct normalized-name claim with `"  smoke-20260717-1410  "` returned 200 `{ok:true,name:"smoke-20260717-1410"}`; accepted as same normalized identity but did not preserve first display casing. |
+| Retake/canonical/leaderboard behavior not obviously broken | PASS | `Back` from leaderboard returned to results; `Try again` opened `Question 1 of 100` for a retake. Post-fix direct normalized-name claim first used `Canonical-20260717143011`, then `"  canonical-20260717143011  "`; both returned 200 and the second response preserved `{ok:true,name:"Canonical-20260717143011"}`. |
 
 Additional browser evidence:
 
@@ -59,7 +59,7 @@ Additional browser evidence:
 | Capability | Deployment-relevant scenario | Runtime evidence | Result |
 |------------|------------------------------|------------------|--------|
 | `student-session` | Valid name starts a session | Deployed name form accepted `Smoke-20260717-1410`; claim function 200; exercise runner opened. | COMPLIANT |
-| `student-session` | Case/whitespace collapse to same identity and retake allowed | Deployed claim with whitespace/lowercase variant returned 200 OK; retake UI opened a fresh attempt. | COMPLIANT WITH WARNING |
+| `student-session` | Case/whitespace collapse to same identity and retake allowed | Deployed claim with whitespace/lowercase variant returned 200 OK and preserved the first claimed display casing; retake UI opened a fresh attempt. | COMPLIANT |
 | `student-session` | Retakes start another attempt | Results → `Try again` displayed `Question 1 of 100`. | COMPLIANT |
 | `scoring-feedback` | Results screen shows score, mistakes, recommendations | Deployed results rendered score, 100 mistakes, accepted answers, and study tips. | COMPLIANT |
 | `shared-leaderboard` | Successful submission | Deployed `submit-score` function returned 200 `{ok:true}` for the completed attempt. | COMPLIANT |
@@ -77,7 +77,7 @@ Additional browser evidence:
 | Netlify Functions | PASS | Required deployed endpoints returned 200 and valid JSON. |
 | Shared leaderboard | PASS | Submitted attempt appeared in deployed leaderboard response and UI. |
 | Retake | PASS | `Try again` reopened the exercise runner. |
-| Canonical display casing | WARNING | Normalized variant was accepted, but direct API response did not preserve first claimed display casing. |
+| Canonical display casing | PASS | Normalized variant was accepted and direct API response preserved first claimed display casing after redeploy. |
 
 ## Design Coherence Table
 
@@ -86,7 +86,7 @@ Additional browser evidence:
 | Vite + React + TypeScript SPA deployed as static site | Yes | Deployed page/assets loaded; `npm run build` passed. |
 | Client-side grading against bundled catalog | Yes | Deployed completion generated local score/mistakes/recommendations before/alongside submit. |
 | Netlify Functions + Blobs behind API boundary | Yes | Deployed function endpoints handled claim, submit, and leaderboard read. |
-| Name identity + retakes | Mostly | Retake path works; normalized case/whitespace claim accepted, but canonical display casing behavior has a warning. |
+| Name identity + retakes | Yes | Retake path works; normalized case/whitespace claim accepted and preserves canonical display casing. |
 | One leaderboard row per attempt | Yes for smoke attempt | Submitted attempt appeared as its own row with attemptId in deployed leaderboard response. |
 
 ## Issues Found
@@ -97,12 +97,12 @@ None.
 
 ### WARNING
 
-- Direct deployed `claim-name` retake/canonical probe with a case/whitespace variant returned the variant casing (`smoke-20260717-1410`) instead of the first claimed display casing (`Smoke-20260717-1410`). Smoke behavior still passed, but this is a design-coherence warning for canonical display-name convergence.
+None.
 
 ### SUGGESTION
 
-- Add a deployed or integration-level assertion for canonical display casing if preserving the first claimed casing is required, because unit tests alone did not expose the deployed behavior observed here.
+- Keep the `@netlify/blobs` conditional-write regression tests because the original warning came from real SDK behavior differing from the in-memory mock.
 
 ## Final Verdict
 
-**PASS WITH WARNINGS** — task `5.3` deployed smoke is complete. The site works on Netlify for the required user journey and serverless leaderboard path; only the non-blocking canonical display-casing warning remains.
+**PASS** — task `5.3` deployed smoke is complete. The site works on Netlify for the required user journey and serverless leaderboard path, and the canonical display-casing warning is cleared after redeploy.
