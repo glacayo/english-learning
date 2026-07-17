@@ -1,0 +1,23 @@
+# Netlify configuration for the English Exercise App.
+# Static frontend (Vite build) + serverless API (Netlify Functions) backed by
+# Netlify Blobs for the shared student-name and leaderboard stores.
+#
+# Specs: openspec/changes/english-exercise-app/specs/netlify-deployment/spec.md
+
+[build]
+  # Build the frontend (tsc typecheck + Vite bundle) before every deploy.
+  command = "npm run build"
+  # Vite emits the static site here.
+  publish = "dist"
+  # Directory for Netlify Functions (v2 syntax, `export default`).
+  functions = "netlify/functions"
+
+[functions]
+  # Pin the Node runtime used by the serverless functions.
+  node_bundler = "esbuild"
+
+# SPA fallback so client-side routing never 404s on refresh.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,55 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  Tech stack: Not yet established — greenfield project, no source files present.
+  Architecture: To be decided during sdd-propose/sdd-design for the first change.
+  Testing: No test runner detected; no framework chosen yet.
+  Style: N/A (no code yet).
+  Domain: English-learning app for children (100 exercises, name entry, leaderboard, auto-evaluation).
+
+delivery:
+  execution_mode: interactive
+  pr_strategy: force-chained
+  review_budget_lines: 400
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - First proposal must select and justify the tech stack (frontend/backend/persistence) since none exists yet
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Define data model for exercises, attempts, scores, and leaderboard entries
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    notes:
+      - Follow existing code patterns
+    tdd: false # No test runner yet; revisit once stack is chosen
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
+
+testing:
+  strict_tdd: false
+  test_runner: null
+  layers:
+    unit: false
+    integration: false
+    e2e: false
+  coverage:
+    available: false
+    command: ""
+  quality:
+    linter: false
+    type_checker: false
+    formatter: false
