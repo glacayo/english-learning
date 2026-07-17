@@ -75,7 +75,12 @@ export class BlobsStore implements StoreLike {
   constructor(private readonly store: Store) {}
 
   async getJSON(key: string): Promise<unknown | null> {
-    return (await this.store.get(key, { type: 'json' })) as unknown | null;
+    // Strong consistency so a retake immediately after the first claim sees the
+    // reserved display name (eventual reads can miss a just-written blob).
+    return (await this.store.get(key, {
+      type: 'json',
+      consistency: 'strong',
+    })) as unknown | null;
   }
 
   async setJSON(
@@ -83,7 +88,12 @@ export class BlobsStore implements StoreLike {
     data: unknown,
     options?: { onlyIfNew?: boolean },
   ): Promise<{ modified: boolean }> {
-    return this.store.setJSON(key, data, options);
+    // Workaround for @netlify/blobs setJSON: it spreads conditional options
+    // (`...conditions`) into makeRequest instead of nesting them under
+    // `conditions`, so `onlyIfNew` is ignored and every write overwrites with
+    // `modified: true`. `set()` passes `conditions` correctly.
+    const result = await this.store.set(key, JSON.stringify(data), options);
+    return { modified: result.modified };
   }
 
   async listKeys(): Promise<string[]> {
@@ -129,16 +139,37 @@ export async function claimName(
   if (trimmed.length === 0) return { ok: false, reason: 'invalid' };
 
   const key = normalizeName(trimmed);
+
+  // Prefer any already-reserved display name so retakes with different casing
+  // or extra spaces converge on the first successful claim (e.g. "Maria" then
+  // "  maria  " → "Maria"). Read-first also protects against stores that ignore
+  // onlyIfNew and would otherwise overwrite the canonical spelling.
+  const existing = (await store.getJSON(key)) as NameClaim | null;
+  if (
+    existing &&
+    typeof existing.displayName === 'string' &&
+    existing.displayName.trim().length > 0
+  ) {
+    return { ok: true, name: existing.displayName };
+  }
+
   const claim: NameClaim = { displayName: trimmed, claimedAt: Date.now() };
   const result = await store.setJSON(key, claim, { onlyIfNew: true });
 
   if (result.modified) {
     return { ok: true, name: trimmed };
   }
-  // Already claimed identity — retake. Return the reserved canonical display
-  // name so cross-device clients converge on one spelling.
-  const existing = (await store.getJSON(key)) as NameClaim | null;
-  return { ok: true, name: existing?.displayName ?? trimmed };
+  // Concurrent first claim lost the race — return the winner's display name
+  // with the same validation as the read-first path (non-empty string only).
+  const winner = (await store.getJSON(key)) as NameClaim | null;
+  if (
+    winner &&
+    typeof winner.displayName === 'string' &&
+    winner.displayName.trim().length > 0
+  ) {
+    return { ok: true, name: winner.displayName };
+  }
+  return { ok: true, name: trimmed };
 }
 
 /**

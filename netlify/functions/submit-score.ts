@@ -28,12 +28,17 @@ export async function handler(
     return json({ ok: false, reason: 'invalid' }, 400);
   }
 
-  const result = await submitScore(store, {
-    name: typeof body?.name === 'string' ? body.name : '',
-    score: typeof body?.score === 'number' ? body.score : NaN,
-    attemptId: typeof body?.attemptId === 'string' ? body.attemptId : '',
-  });
-  return json(result as SubmitScoreResponse, result.ok ? 200 : 400);
+  try {
+    const result = await submitScore(store, {
+      name: typeof body?.name === 'string' ? body.name : '',
+      score: typeof body?.score === 'number' ? body.score : NaN,
+      attemptId: typeof body?.attemptId === 'string' ? body.attemptId : '',
+    });
+    return json(result as SubmitScoreResponse, result.ok ? 200 : 400);
+  } catch (err) {
+    console.error('[submit-score] store operation failed', err);
+    return json({ ok: false, error: 'internal' }, 500);
+  }
 }
 
 /** Netlify deploy entry point — resolves the store from Netlify env. */

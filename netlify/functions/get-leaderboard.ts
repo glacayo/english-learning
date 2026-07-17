@@ -21,8 +21,13 @@ export async function handler(
     return json({ error: 'method-not-allowed' }, 405);
   }
 
-  const entries = await getRankedLeaderboard(store);
-  return json(entries as LeaderboardEntry[], 200);
+  try {
+    const entries = await getRankedLeaderboard(store);
+    return json(entries as LeaderboardEntry[], 200);
+  } catch (err) {
+    console.error('[get-leaderboard] store operation failed', err);
+    return json({ error: 'internal' }, 500);
+  }
 }
 
 /** Netlify deploy entry point — resolves the store from Netlify env. */

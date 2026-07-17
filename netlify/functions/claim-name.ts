@@ -33,8 +33,13 @@ export async function handler(
   }
 
   const name = typeof body?.name === 'string' ? body.name : '';
-  const result = await claimName(store, name);
-  return json(result as ClaimNameResponse, result.ok ? 200 : 400);
+  try {
+    const result = await claimName(store, name);
+    return json(result as ClaimNameResponse, result.ok ? 200 : 400);
+  } catch (err) {
+    console.error('[claim-name] store operation failed', err);
+    return json({ ok: false, error: 'internal' }, 500);
+  }
 }
 
 /** Netlify deploy entry point — resolves the store from Netlify env. */

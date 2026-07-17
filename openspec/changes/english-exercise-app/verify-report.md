@@ -1,120 +1,93 @@
-# Verification Report: English Exercise App — Final Deterministic Verification
+# Verification Report: English Exercise App — Deployed Netlify Smoke
 
 **Change**: `english-exercise-app`  
 **Artifact mode**: OpenSpec  
 **Mode**: Standard verification (`strict_tdd: false`)  
 **Date**: 2026-07-17  
-**Scope**: Full OpenSpec change before publishing to GitHub.  
-**Incident constraint honored**: No `npm run preview`, `npm run dev`, `vite preview`, `netlify dev`, Playwright, Chrome, or long-running server/smoke-server step was started.
+**Deployed URL**: <https://en-learn.netlify.app/>  
+**Scope**: Final task `5.3` deploy-preview/site smoke verification plus deterministic repo commands.  
+**Constraint honored**: No local dev/preview/server command was started. Browser checks targeted only the deployed Netlify URL.
 
 ## Verdict
 
-**PASS WITH WARNINGS** — deterministic verification passed: typecheck, Vitest, and production build all exited 0. The implementation matches the OpenSpec artifacts for local app behavior, domain rules, Netlify function contracts, idempotent writes, ranking, and configured build/test commands.
+**PASS WITH WARNINGS** — deployed smoke passed for page load, name entry, exercise completion to results, results content, Netlify Function submission, leaderboard loading, submitted-attempt visibility, and retake navigation. Deterministic repo commands also passed.
 
-The warning is manual-environment scope only: task `5.3` still includes a Netlify deploy-preview smoke check, which is intentionally not executable in this verification run. It is recorded as manual pending, not a deterministic failure.
+One non-blocking warning remains: a direct deployed normalized-name retake check accepted a case/whitespace variant but returned that trimmed variant casing instead of preserving the first claimed display casing. This does not break the smoke path, uniqueness key, submit, leaderboard, or retake flow observed here, but it is a design-coherence warning worth revisiting before relying on canonical display casing.
 
 ## Completeness Table
 
 | Metric | Value |
 |--------|-------|
 | Tasks total | 18 |
-| Tasks complete | 17 |
-| Tasks incomplete | 1 |
+| Tasks complete after this run | 18 |
+| Tasks incomplete | 0 |
 | Deterministic required commands | 3/3 passed |
-| Manual smoke-server/deploy-preview steps executed | 0 — intentionally skipped |
-
-### Task Status
-
-| Task | Status | Evidence |
-|------|--------|----------|
-| 1.1–1.4 Foundation / toolchain | PASS | Config files and app bootstrap exist; typecheck/build pass. |
-| 2.1–2.4 Catalog / domain rules | PASS | `src/content/exercises.ts`, domain modules, and tests pass. |
-| 3.1–3.4 Attempt state / UI | PASS | Reducer, API client, UI components, and app wiring present; tests/build pass. |
-| 4.1–4.3 Netlify integration | PASS | `netlify.toml`, `_store.ts`, and three functions exist; function tests pass. |
-| 5.1 Domain tests | PASS | `src/domain/__tests__/*.test.ts`; included in `npm test`. |
-| 5.2 Function tests | PASS | `netlify/functions/__tests__/*.test.ts`; included in `npm test`. |
-| 5.3 Build/test + Netlify deploy preview smoke | WARNING | `npm test` and `npm run build` passed; Netlify deploy-preview smoke remains manual pending by explicit constraint. |
+| Deployed smoke required behaviors | 7/7 passed with 1 warning |
+| Local servers started | 0 |
 
 ## Build & Tests Execution
 
-Commands were run from `C:\laragon\www\english-learning` and only the required deterministic commands were executed.
+Commands were run from `C:\laragon\www\english-learning`.
 
 | Command | Exit Code | Result | Evidence |
 |---------|-----------|--------|----------|
 | `npm run typecheck` | 0 | PASS | `tsc -b` completed with no reported errors. |
-| `npm test` | 0 | PASS | Vitest v4.1.10: `13 passed (13)` test files, `138 passed (138)` tests, duration 2.84s. |
+| `npm test` | 0 | PASS | Vitest v4.1.10: `13 passed (13)` test files, `138 passed (138)` tests, duration 2.94s. |
 | `npm run build` | 0 | PASS | `tsc -b && vite build`; Vite v7.3.6 transformed 41 modules and built `dist/index.html`, CSS, and JS. |
 
-**Coverage**: Not available/configured (`openspec/config.yaml` coverage threshold: `0`, coverage command empty).
+**Coverage**: Not configured (`openspec/config.yaml` coverage threshold: `0`, coverage command empty).
+
+## Deployed Smoke Evidence
+
+| Required behavior | Result | Evidence |
+|-------------------|--------|----------|
+| Page loads from deployed URL | PASS | Browser loaded `https://en-learn.netlify.app/`; document and static assets returned 200. |
+| Student can enter unique test name and start | PASS | Entered `Smoke-20260717-1410`; `POST /.netlify/functions/claim-name` returned 200 with `{"ok":true,"name":"Smoke-20260717-1410"}`. |
+| Exercise flow reaches results | PASS | Used safe browser automation against deployed UI buttons: clicked `Skip` through 99 questions, then `Finish` on question 100. This intentionally produced a complete 0-score attempt without bypassing app screens or local state. |
+| Results show score/mistakes/recommendations | PASS | Results rendered `0 out of 100`, `Mistakes (100)`, and study tips including `Daily Routine`, `Like / Don't Like`, and `Present Progressive`. |
+| Submit reaches Netlify Functions and not 404 | PASS | `POST /.netlify/functions/submit-score` returned 200, body `{"ok":true}`. Submitted payload included attemptId `930a0e03-7d2b-4410-b142-4ef73bff3726`. |
+| Leaderboard loads and includes submitted attempt | PASS | `GET /.netlify/functions/get-leaderboard` returned 200 and included `{attemptId:"930a0e03-7d2b-4410-b142-4ef73bff3726", name:"Smoke-20260717-1410", score:0}`; UI displayed rank `1`, name, and score `0`. |
+| Retake/canonical/leaderboard behavior not obviously broken | PASS WITH WARNING | `Back` from leaderboard returned to results; `Try again` opened `Question 1 of 100` for a retake. Direct normalized-name claim with `"  smoke-20260717-1410  "` returned 200 `{ok:true,name:"smoke-20260717-1410"}`; accepted as same normalized identity but did not preserve first display casing. |
+
+Additional browser evidence:
+
+- Console messages: none observed.
+- Network statuses: `GET /` 200, JS asset 200, CSS asset 200, `claim-name` 200, `submit-score` 200, `get-leaderboard` 200.
 
 ## Spec Compliance Matrix
 
-| Requirement | Scenario | Test / Evidence | Result |
-|-------------|----------|-----------------|--------|
-| `exercise-bank` Catalog Size | Catalog loads with full count | `src/domain/__tests__/exercises.test.ts` — contains exactly 100 exercises; `npm test` passed | COMPLIANT |
-| `exercise-bank` Catalog Size | Wrong count rejected | `src/domain/__tests__/catalog.test.ts` — rejects wrong total; `npm test` passed | COMPLIANT |
-| `exercise-bank` Topic Coverage | All approved topics represented | `exercises.test.ts` + `catalog.test.ts`; `npm test` passed | COMPLIANT |
-| `exercise-bank` Balanced Distribution | Each topic has 12 or 13 exercises | `exercises.test.ts`; `npm test` passed | COMPLIANT |
-| `exercise-bank` Balanced Distribution | Unbalanced distribution rejected | `catalog.test.ts`; `npm test` passed | COMPLIANT |
-| `exercise-bank` Record Shape | Unique ids enforced | `catalog.test.ts`, `exercises.test.ts`; `npm test` passed | COMPLIANT |
-| `exercise-bank` Record Shape | Missing accepted answers rejected | `catalog.test.ts`, `exercises.test.ts`; `npm test` passed | COMPLIANT |
-| `exercise-bank` Accepted Answers | Alternate answer recognized | `exercises.test.ts`, `grading.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Auto-Grading | Exact match correct | `src/domain/__tests__/grading.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Auto-Grading | Case-folded alternate correct | `grading.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Auto-Grading | Leading/trailing spaces ignored | `grading.test.ts`, `exercises.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Auto-Grading | Incorrect answer recorded | `grading.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Mistake Review | Mistakes list matches incorrect answers | `grading.test.ts` preserves mistake order and unanswered/wrong entries; `Results.tsx` renders mistakes; build passed | COMPLIANT |
-| `scoring-feedback` Topic Recommendation | High miss-rate topic recommended | `recommendations.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Topic Recommendation | Low miss-rate topic excluded | `recommendations.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` Topic Recommendation | Recommendations capped at three | `recommendations.test.ts`; `npm test` passed | COMPLIANT |
-| `scoring-feedback` End-of-Test Summary | Results screen shows score, mistakes, recommendations | `Results.tsx` source + typecheck/build passed | COMPLIANT |
-| `student-session` Name Capture | Valid name starts a session | `attemptReducer.test.ts`, `client.test.ts`, `resolveAttemptName.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Name Capture | Empty name blocked with friendly guidance | `NameEntry.tsx` source, `client.test.ts`, `attemptReducer.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Normalized Identity | Case/whitespace collapse to same identity and retake allowed | `claimName.test.ts`, `handlers.test.ts`, `leaderboard.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Normalized Identity | Distinct name accepted | `claimName.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Retakes | Returning student gets new attemptId | `attemptReducer.test.ts`, `client.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Attempt Lifecycle | Answers accepted only in progress | `attemptReducer.test.ts`; `npm test` passed | COMPLIANT |
-| `student-session` Attempt Lifecycle | Completes after last exercise and rejects further answers | `attemptReducer.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Score Submission | Successful submission persists attemptId-keyed entry | `submitScore.test.ts`, `handlers.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Score Submission | Retry after successful write is idempotent | `submitScore.test.ts`, `handlers.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Score Submission | Submission failure handled gracefully | `client.test.ts` network failure + `Results.tsx` retry/local-results source; build passed | COMPLIANT |
-| `shared-leaderboard` Ranking | Higher score ranks above lower score | `leaderboard.test.ts`, `getLeaderboard.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Deterministic Tie-Break | Earlier timestamp first | `leaderboard.test.ts`, `getLeaderboard.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Deterministic Tie-Break | Name then attemptId | `leaderboard.test.ts`, `getLeaderboard.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Multiple Attempts | Retake adds second row | `leaderboard.test.ts`, `getLeaderboard.test.ts`, `submitScore.test.ts`; `npm test` passed | COMPLIANT |
-| `shared-leaderboard` Cross-Device Reads | Score visible from different device | Function/store contract tests prove persisted list/read behavior with mocked store; real deployed cross-device smoke pending | WARNING — manual pending |
-| `netlify-deployment` Static Frontend | Production build served correctly | `npm run build` produced `dist/`; actual Netlify URL serving not exercised | WARNING — manual pending |
-| `netlify-deployment` Serverless API | Submit endpoint reachable | Function handler tests passed; deployed endpoint reachability not exercised | WARNING — manual pending |
-| `netlify-deployment` Serverless API | Read endpoint reachable | Function handler tests passed; deployed endpoint reachability not exercised | WARNING — manual pending |
-| `netlify-deployment` Shared Persistence | Data persists across function cold starts | Netlify Blobs helper contract and handler tests passed; real cold-start deploy smoke not executed | WARNING — manual pending |
-| `netlify-deployment` Build & Test Commands | CI build produces deployable artifact | `npm run build` passed and emitted `dist/` | COMPLIANT |
-| `netlify-deployment` Build & Test Commands | Test command runs unit suite | `npm test` passed: 13 files, 138 tests | COMPLIANT |
+| Capability | Deployment-relevant scenario | Runtime evidence | Result |
+|------------|------------------------------|------------------|--------|
+| `student-session` | Valid name starts a session | Deployed name form accepted `Smoke-20260717-1410`; claim function 200; exercise runner opened. | COMPLIANT |
+| `student-session` | Case/whitespace collapse to same identity and retake allowed | Deployed claim with whitespace/lowercase variant returned 200 OK; retake UI opened a fresh attempt. | COMPLIANT WITH WARNING |
+| `student-session` | Retakes start another attempt | Results → `Try again` displayed `Question 1 of 100`. | COMPLIANT |
+| `scoring-feedback` | Results screen shows score, mistakes, recommendations | Deployed results rendered score, 100 mistakes, accepted answers, and study tips. | COMPLIANT |
+| `shared-leaderboard` | Successful submission | Deployed `submit-score` function returned 200 `{ok:true}` for the completed attempt. | COMPLIANT |
+| `shared-leaderboard` | Cross-device/server read path | Deployed `get-leaderboard` function returned persisted submitted attempt after a separate read call. | COMPLIANT |
+| `netlify-deployment` | Production frontend served correctly | Deployed URL and static assets returned 200 and rendered the React app. | COMPLIANT |
+| `netlify-deployment` | Serverless API reachable | `claim-name`, `submit-score`, and `get-leaderboard` all returned 200; no 404s. | COMPLIANT |
+| `netlify-deployment` | Build and test commands | `npm run typecheck`, `npm test`, and `npm run build` passed locally without server startup. | COMPLIANT |
 
-**Compliance summary**: 33/38 scenarios are fully compliant by deterministic runtime evidence. 5/38 deployment-environment scenarios are manual pending warnings because deploy-preview smoke was explicitly out of scope for this final deterministic run.
+## Correctness Table
 
-## Correctness (Static — Structural Evidence)
+| Area | Status | Notes |
+|------|--------|-------|
+| Exercise flow | PASS | Deployed UI moved from name entry through 100-question completion to results. |
+| Results content | PASS | Score, mistakes, accepted answers, and recommendations displayed. |
+| Netlify Functions | PASS | Required deployed endpoints returned 200 and valid JSON. |
+| Shared leaderboard | PASS | Submitted attempt appeared in deployed leaderboard response and UI. |
+| Retake | PASS | `Try again` reopened the exercise runner. |
+| Canonical display casing | WARNING | Normalized variant was accepted, but direct API response did not preserve first claimed display casing. |
 
-| Requirement Area | Status | Notes |
-|------------------|--------|-------|
-| Exercise bank | Implemented | Catalog has exactly 100 typed exercises, approved topics, validation tests, and accepted-answer tests. |
-| Scoring and feedback | Implemented | `gradeAnswer`, `gradeAttempt`, `recommendTopics`, and `Results.tsx` support normalized grading, mistakes, score, and recommendations. |
-| Student session | Implemented | `NameEntry`, `resolveAttemptName`, API client, and `attemptReducer` cover name validation, normalized identity, retakes, lifecycle, and completion. |
-| Shared leaderboard | Implemented | `rankEntries`, client wrappers, Netlify store helpers, and function handlers cover submission, idempotency, ranking, retake rows, and reads. |
-| Netlify deployment | Implemented with manual deployment verification pending | `netlify.toml` configures build/publish/functions; deployed URL and cold-start behavior require Netlify environment smoke. |
+## Design Coherence Table
 
-## Coherence (Design)
-
-| Design Decision | Followed? | Notes |
-|-----------------|-----------|-------|
-| Vite + React + TypeScript SPA | Yes | Toolchain and app source exist; typecheck/build pass. |
-| Pure domain modules in `src/domain/` | Yes | Grading, recommendations, ranking, catalog validation are framework-free and tested. |
-| Client-side grading against bundled catalog | Yes | `App.tsx` computes `gradeAttempt(EXERCISES, responses)` on completion. |
-| Netlify Functions + Netlify Blobs behind API boundary | Yes | `_store.ts` wraps Blobs and functions expose `claim-name`, `submit-score`, `get-leaderboard`. |
-| Name identity + retakes | Yes | Normalized key claim allows retake and returns canonical display name. |
-| One blob per submission entry / attemptId idempotency | Yes | `submitScore` writes by `attemptId` with `onlyIfNew`; tests pass. |
-| Single attempt reducer | Yes | `src/state/attemptReducer.ts` models lifecycle; `App.tsx` uses it directly. |
-| Typed TS catalog validated by tests | Yes | `validateCatalog` and catalog/exercise tests pass. |
-| Manual Netlify deploy-preview smoke | Pending | Not run by explicit deterministic-only constraint. |
+| Design Decision | Followed? | Evidence |
+|-----------------|-----------|----------|
+| Vite + React + TypeScript SPA deployed as static site | Yes | Deployed page/assets loaded; `npm run build` passed. |
+| Client-side grading against bundled catalog | Yes | Deployed completion generated local score/mistakes/recommendations before/alongside submit. |
+| Netlify Functions + Blobs behind API boundary | Yes | Deployed function endpoints handled claim, submit, and leaderboard read. |
+| Name identity + retakes | Mostly | Retake path works; normalized case/whitespace claim accepted, but canonical display casing behavior has a warning. |
+| One leaderboard row per attempt | Yes for smoke attempt | Submitted attempt appeared as its own row with attemptId in deployed leaderboard response. |
 
 ## Issues Found
 
@@ -124,13 +97,12 @@ None.
 
 ### WARNING
 
-- Task `5.3` remains partially manual: deterministic pieces (`npm test`, `npm run build`) passed, but Netlify deploy-preview smoke for start/completion/results/submit/cross-device leaderboard read was intentionally not executed.
-- Deployment-environment scenarios that require a real Netlify URL, function reachability after deploy, Blob persistence across cold starts, and cross-device browser reads remain manual pending.
+- Direct deployed `claim-name` retake/canonical probe with a case/whitespace variant returned the variant casing (`smoke-20260717-1410`) instead of the first claimed display casing (`Smoke-20260717-1410`). Smoke behavior still passed, but this is a design-coherence warning for canonical display-name convergence.
 
 ### SUGGESTION
 
-- Before publishing the final release, run the Netlify deploy-preview smoke in a controlled terminal/session and record the URL plus manual observations separately.
+- Add a deployed or integration-level assertion for canonical display casing if preserving the first claimed casing is required, because unit tests alone did not expose the deployed behavior observed here.
 
 ## Final Verdict
 
-**PASS WITH WARNINGS** — deterministic verification is clean and GitHub publication is not blocked by local typecheck/test/build. The only remaining warning is the explicitly skipped Netlify deploy-preview manual smoke.
+**PASS WITH WARNINGS** — task `5.3` deployed smoke is complete. The site works on Netlify for the required user journey and serverless leaderboard path; only the non-blocking canonical display-casing warning remains.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { StoreLike } from '../_store';
 import { handler as claimNameHandler } from '../claim-name';
 import { handler as submitScoreHandler } from '../submit-score';
@@ -75,6 +75,27 @@ describe('claim-name handler', () => {
     const res = await claimNameHandler(store, new Request('https://x.test', { method: 'GET' }));
     expect(res.status).toBe(405);
   });
+
+  it('returns 500 and logs when store operation throws', async () => {
+    const err = new Error('blobs down');
+    const store: StoreLike = {
+      async getJSON() {
+        throw err;
+      },
+      async setJSON() {
+        throw err;
+      },
+      async listKeys() {
+        throw err;
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await claimNameHandler(store, jsonReq({ name: 'Maria' }));
+    expect(res.status).toBe(500);
+    expect(await body(res)).toEqual({ ok: false, error: 'internal' });
+    expect(spy).toHaveBeenCalledWith('[claim-name] store operation failed', err);
+    spy.mockRestore();
+  });
 });
 
 describe('submit-score handler', () => {
@@ -108,6 +129,30 @@ describe('submit-score handler', () => {
     const res = await submitScoreHandler(store, new Request('https://x.test', { method: 'GET' }));
     expect(res.status).toBe(405);
   });
+
+  it('returns 500 and logs when store operation throws', async () => {
+    const err = new Error('blobs down');
+    const store: StoreLike = {
+      async getJSON() {
+        throw err;
+      },
+      async setJSON() {
+        throw err;
+      },
+      async listKeys() {
+        throw err;
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await submitScoreHandler(
+      store,
+      jsonReq({ name: 'Maria', score: 90, attemptId: 'att-1' }),
+    );
+    expect(res.status).toBe(500);
+    expect(await body(res)).toEqual({ ok: false, error: 'internal' });
+    expect(spy).toHaveBeenCalledWith('[submit-score] store operation failed', err);
+    spy.mockRestore();
+  });
 });
 
 describe('get-leaderboard handler', () => {
@@ -134,5 +179,29 @@ describe('get-leaderboard handler', () => {
     const store = makeStore();
     const res = await getLeaderboardHandler(store, new Request('https://x.test', { method: 'POST' }));
     expect(res.status).toBe(405);
+  });
+
+  it('returns 500 and logs when store operation throws', async () => {
+    const err = new Error('blobs down');
+    const store: StoreLike = {
+      async getJSON() {
+        throw err;
+      },
+      async setJSON() {
+        throw err;
+      },
+      async listKeys() {
+        throw err;
+      },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await getLeaderboardHandler(
+      store,
+      new Request('https://x.test', { method: 'GET' }),
+    );
+    expect(res.status).toBe(500);
+    expect(await body(res)).toEqual({ error: 'internal' });
+    expect(spy).toHaveBeenCalledWith('[get-leaderboard] store operation failed', err);
+    spy.mockRestore();
   });
 });

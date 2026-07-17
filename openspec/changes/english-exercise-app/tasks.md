@@ -56,4 +56,4 @@ Chain strategy: stacked-to-main
 
 - [x] 5.1 Add `src/domain/__tests__/*.test.ts` for catalog, grading, recommendations, ranking, and attempt reducer scenarios from the specs.
 - [x] 5.2 Add `netlify/functions/__tests__/*.test.ts` with mocked `_store` for first claim, retake, idempotent submit, new-attempt row, and sorted reads.
-- [ ] 5.3 Run `npm test` and `npm run build`; manually smoke test a Netlify deploy preview for start, completion, results, submit, and cross-device leaderboard read.
+- [x] 5.3 Run `npm test` and `npm run build`; manually smoke test a Netlify deploy preview for start, completion, results, submit, and cross-device leaderboard read.
