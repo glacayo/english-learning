@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import type { Answer, AttemptResult, Exercise, LevelId } from '../domain/types';
+import type { Answer, AttemptResult, LevelId, Topic } from '../domain/types';
 import { levelLabel, PASS_THRESHOLD } from '../content/levels';
 import { TOPIC_LABELS } from '../content/topics';
 import type { ApiResult } from '../api/client';
@@ -8,11 +8,11 @@ import type { ApiResult } from '../api/client';
  * Results — end-of-test summary (scoring-feedback + level-progression specs).
  *
  * Shows the final score (0–10), the level number, the pass/fail status, the
- * mistakes list (each with topic, the student's answer, and the accepted
- * answer(s)), and the recommended topics. Also renders the submit status for
- * the leaderboard: pending, submitted, or failed. On failure the student still
- * sees their full local results, with a retry button (same attemptId is safe —
- * idempotent write).
+ * mistakes list (each with topic, the student's answer, and a study hint —
+ * without revealing exercise prompts or accepted answers), and the recommended
+ * topics. Also renders the submit status for the leaderboard: pending,
+ * submitted, or failed. On failure the student still sees their full local
+ * results, with a retry button (same attemptId is safe — idempotent write).
  *
  * Navigation (design.md "Results / navigation contract"):
  *   - "Back to levels" — always available after complete. Shows
@@ -28,8 +28,6 @@ import type { ApiResult } from '../api/client';
  */
 export interface ResultsProps {
   result: AttemptResult;
-  /** Catalog for resolving accepted answers in the mistakes review. */
-  exercises: readonly Exercise[];
   /** Student display name (for the summary line + leaderboard submit). */
   name: string;
   /** Level this attempt was scoped to (1–10). */
@@ -76,9 +74,36 @@ export function canAdvance(levelId: LevelId, score: number): boolean {
   return didPass(score) && levelId < 10;
 }
 
+/**
+ * Study advice for a topic — used in the mistakes review so students know what
+ * to practice without being shown the accepted answer(s).
+ *
+ * Pure function: no I/O, no mutation. Never returns answer keys.
+ * Exhaustive over `Topic` (no default fallback).
+ */
+export function studyHintForTopic(topic: Topic): string {
+  switch (topic) {
+    case 'present-simple':
+      return 'Review Present Simple: everyday habits and facts. Practice base verbs and when to add -s.';
+    case 'simple-past':
+      return 'Review Simple Past: finished actions. Practice regular -ed endings and common irregular verbs.';
+    case 'present-progressive':
+      return 'Review Present Progressive: actions happening now. Practice am/is/are + verb-ing.';
+    case 'simple-past-3rd':
+      return 'Review Simple Past with he/she/it. Practice past forms for third-person subjects.';
+    case 'present-simple-3rd':
+      return 'Review Present Simple with he/she/it. Practice adding -s/-es for third person.';
+    case 'present-progressive-3rd':
+      return 'Review Present Progressive with he/she/it. Practice is + verb-ing for one person.';
+    case 'daily-routine':
+      return 'Review Daily Routine vocabulary and verbs. Practice common morning and school-day actions.';
+    case 'like-dislike':
+      return 'Review Like and Don\'t Like patterns. Practice saying what you enjoy and what you do not.';
+  }
+}
+
 export function Results({
   result,
-  exercises,
   name,
   levelId,
   submitStatus,
@@ -88,9 +113,6 @@ export function Results({
   onBackToLevels,
   onViewLeaderboard,
 }: ResultsProps): JSX.Element {
-  const acceptedById = new Map<string, Exercise>();
-  for (const ex of exercises) acceptedById.set(ex.id, ex);
-
   const passed = didPass(result.score);
   const isLevel10 = levelId === 10;
   const showNext = canAdvance(levelId, result.score);
@@ -142,7 +164,7 @@ export function Results({
         ) : (
           <ul className="results__mistakes">
             {result.mistakes.map((m) => (
-              <MistakeItem key={m.exerciseId} mistake={m} exercise={acceptedById.get(m.exerciseId)} />
+              <MistakeItem key={m.exerciseId} mistake={m} />
             ))}
           </ul>
         )}
@@ -186,25 +208,25 @@ export function Results({
   );
 }
 
+/**
+ * Final mistake review: topic + student answer + study advice only.
+ * Never renders the exercise prompt or acceptedAnswers (catalog prompts often
+ * embed answer-key hints such as "(go)").
+ */
 function MistakeItem({
   mistake,
-  exercise,
 }: {
   mistake: Answer;
-  exercise: Exercise | undefined;
 }): JSX.Element {
-  const accepted = exercise?.acceptedAnswers ?? [];
   const topicLabel = TOPIC_LABELS[mistake.topic] ?? mistake.topic;
+  const studyHint = studyHintForTopic(mistake.topic);
   return (
     <li className="mistake">
-      <div className="mistake__prompt">{exercise?.prompt ?? mistake.exerciseId}</div>
       <div className="mistake__meta">{topicLabel}</div>
       <div className="mistake__row">
         <span className="mistake__given">You: {mistake.given || '(blank)'}</span>
-        <span className="mistake__accepted">
-          Correct: {accepted.join(' / ') || '—'}
-        </span>
       </div>
+      <p className="mistake__advice">{studyHint}</p>
     </li>
   );
 }

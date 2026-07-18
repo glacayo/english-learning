@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   canAdvance,
   didPass,
+  studyHintForTopic,
 } from '../Results';
 import { PASS_THRESHOLD } from '../../content/levels';
+import { TOPICS } from '../../content/topics';
+import type { Topic } from '../../domain/types';
 
 describe('didPass (pure helper)', () => {
   it('passes at PASS_THRESHOLD (9)', () => {
@@ -44,5 +47,29 @@ describe('canAdvance (pure helper)', () => {
     // back-to-levels stay available because leaderboard submit is best-effort.
     expect(canAdvance(10, 10)).toBe(false);
     expect(canAdvance(10, 9)).toBe(false);
+  });
+});
+
+describe('studyHintForTopic (pure helper)', () => {
+  it('returns non-empty advice for every approved topic', () => {
+    for (const topic of TOPICS) {
+      const hint = studyHintForTopic(topic);
+      expect(hint.length).toBeGreaterThan(10);
+      expect(hint.toLowerCase()).toMatch(/review|practice/);
+    }
+  });
+
+  it('never returns answer-key style strings', () => {
+    for (const topic of TOPICS) {
+      const hint = studyHintForTopic(topic);
+      expect(hint).not.toMatch(/correct answer/i);
+      expect(hint).not.toMatch(/accepted/i);
+      expect(hint).not.toMatch(/^[\w'-]+( \/ [\w'-]+)+$/);
+    }
+  });
+
+  it('covers third-person present simple with an -s/-es reminder', () => {
+    const hint = studyHintForTopic('present-simple-3rd' as Topic);
+    expect(hint).toMatch(/-s\/-es|third person/i);
   });
 });

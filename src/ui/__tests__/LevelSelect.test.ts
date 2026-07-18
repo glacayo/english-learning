@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { levelCardStatus } from '../LevelSelect';
+import { levelCardStatus, statusLabel } from '../LevelSelect';
 import { applyPass, createInitialProgress, type LevelProgress } from '../../domain/levelProgress';
+
+describe('statusLabel (pure helper)', () => {
+  it('maps card statuses to the visible chip labels used by the UI', () => {
+    expect(statusLabel('passed')).toBe('Passed');
+    expect(statusLabel('unlocked')).toBe('Start');
+    expect(statusLabel('locked')).toBe('Locked');
+  });
+});
 
 describe('levelCardStatus (pure helper)', () => {
   it('returns "unlocked" for Level 1 on a fresh student', () => {

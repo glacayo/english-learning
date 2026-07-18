@@ -407,7 +407,6 @@ export function App(): JSX.Element {
         {screen === 'results' && result && currentLevel ? (
           <Results
             result={result}
-            exercises={currentLevel.exercises}
             name={attempt.name}
             levelId={currentLevel.id}
             submitStatus={submitStatus}

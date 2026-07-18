@@ -51,14 +51,28 @@ fail. A skipped question counts as incorrect.
 ### Requirement: Mistake Review
 
 The system MUST present a list of every incorrectly answered exercise,
-including exercise id, topic, the student's answer, and the accepted
-answer(s).
+including the topic, the student's answer, and study advice for what to review
+next. The results screen MUST NOT display the exercise prompt, accepted
+answers, or any other content that reveals the correct answer key (including
+catalog prompt hints such as base-form cues in parentheses).
 
 #### Scenario: Mistakes list matches incorrect answers
 
 - GIVEN a completed attempt with 3 incorrect answers
 - WHEN the results screen is generated
-- THEN the mistakes list contains exactly those 3 exercises with topic and answers shown
+- THEN the mistakes list contains exactly those 3 exercises with topic,
+  student answer, and study advice shown
+- AND it does not show the exercise prompt
+- AND it does not show accepted answers or a `Correct:` answer-key label
+
+#### Scenario: Catalog prompt answer hints are not shown on Results
+
+- GIVEN a missed exercise whose catalog prompt embeds an answer-key hint
+  (for example `I ___ to school every day. (go)`)
+- WHEN the results screen is generated
+- THEN the mistakes review MUST NOT include that prompt text or the
+  parenthetical answer-key hint
+- AND it MUST still show the student's answer, topic, and study advice
 
 ### Requirement: Topic Recommendation
 
@@ -111,6 +125,8 @@ attempt's level and its pass/fail status.
 - WHEN the results screen renders
 - THEN it MUST show the score (0-10), the mistakes list, the recommended
   topics, the level number, and whether the level was passed
+- AND it MUST NOT reveal exercise prompts or accepted answers for missed
+  questions
 
 ### Requirement: Level Pass Threshold
 

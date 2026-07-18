@@ -31,13 +31,13 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { LevelSelect, levelCardStatus } from '../LevelSelect';
+import { LevelSelect, LEVEL_SELECT_EYEBROW, levelCardStatus } from '../LevelSelect';
 import { Results, didPass, canAdvance } from '../Results';
 import { Leaderboard } from '../Leaderboard';
 import { buildLevels } from '../../content/levels';
 import { EXERCISES } from '../../content/exercises';
 import { applyPass, createInitialProgress, type LevelProgress } from '../../domain/levelProgress';
-import type { LevelId, AttemptResult, Exercise } from '../../domain/types';
+import type { LevelId, AttemptResult } from '../../domain/types';
 import type { SubmitStatus } from '../Results';
 
 // ---------------------------------------------------------------------------
@@ -204,6 +204,22 @@ describe('UI flow — locked-level blocking (LevelSelect)', () => {
     const level1Section = html.split('Level 1')[1]?.split('Level 2')[0] ?? '';
     expect(level1Section).not.toMatch(/Pass Level 0 first/);
   });
+
+  it('shows a friendly progress summary for a fresh student', () => {
+    const levels = buildLevels(EXERCISES);
+    const html = render(LevelSelect, {
+      levels,
+      progress: createInitialProgress(),
+      name: 'Test',
+      onSelect: () => {},
+    });
+    expect(html).toMatch(/You passed/);
+    expect(html).toMatch(/0/);
+    expect(html).toMatch(/of/);
+    expect(html).toMatch(/10/);
+    expect(html).toMatch(/levels/);
+    expect(html).toContain(LEVEL_SELECT_EYEBROW);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -272,12 +288,58 @@ describe('UI flow — selecting next unlocked level (LevelSelect)', () => {
 // ---------------------------------------------------------------------------
 
 describe('UI flow — Results next/back/retake actions', () => {
-  const exercises: readonly Exercise[] = buildLevels(EXERCISES)[0].exercises;
+  it('renders mistakes with given answer, topic, and study advice — without prompt or answer keys', () => {
+    // Real catalog-style prompt embeds a base-form hint like "(go)" that would
+    // leak the accepted answer if Results still rendered the exercise prompt.
+    const exercise = EXERCISES.find((e) => e.id === 'present-simple-01');
+    expect(exercise).toBeDefined();
+    if (!exercise) throw new Error('expected catalog exercise present-simple-01');
+    expect(exercise.prompt).toContain('(go)');
+    expect(exercise.acceptedAnswers).toContain('go');
+
+    const html = render(Results, {
+      result: {
+        score: 9,
+        mistakes: [
+          {
+            exerciseId: exercise.id,
+            topic: exercise.topic,
+            given: 'wrong-answer',
+            correct: false,
+          },
+        ],
+        recommendations: [exercise.topic],
+      },
+      name: 'Test',
+      levelId: 1 as LevelId,
+      submitStatus: idleStatus,
+      onRetrySubmit: () => {},
+      onRetake: () => {},
+      onNextLevel: () => {},
+      onBackToLevels: () => {},
+      onViewLeaderboard: () => {},
+    });
+
+    // Student answer, topic, and study advice stay visible.
+    expect(html).toMatch(/You: wrong-answer/);
+    expect(html).toMatch(/Present Simple/);
+    expect(html).toMatch(/Review Present Simple/);
+    expect(html).toMatch(/mistake__advice/);
+
+    // Exercise prompt and answer-key content must not leak into final Results HTML.
+    expect(html).not.toContain(exercise.prompt);
+    expect(html).not.toContain('(go)');
+    expect(html).not.toMatch(/mistake__prompt/);
+    expect(html).not.toMatch(/Correct:/);
+    expect(html).not.toMatch(/mistake__accepted/);
+    for (const answer of exercise.acceptedAnswers) {
+      expect(html).not.toContain(answer);
+    }
+  });
 
   it('renders "Try again", "Back to levels", and "See leaderboard" for any result', () => {
     const html = render(Results, {
       result: makeResult(5),
-      exercises,
       name: 'Test',
       levelId: 1 as LevelId,
       submitStatus: idleStatus,
@@ -295,7 +357,6 @@ describe('UI flow — Results next/back/retake actions', () => {
   it('renders "Next level" when passed and levelId < 10', () => {
     const html = render(Results, {
       result: makeResult(9),
-      exercises,
       name: 'Test',
       levelId: 5 as LevelId,
       submitStatus: idleStatus,
@@ -311,7 +372,6 @@ describe('UI flow — Results next/back/retake actions', () => {
   it('does NOT render "Next level" when the attempt did not pass (score < 9)', () => {
     const html = render(Results, {
       result: makeResult(8),
-      exercises,
       name: 'Test',
       levelId: 5 as LevelId,
       submitStatus: idleStatus,
@@ -327,7 +387,6 @@ describe('UI flow — Results next/back/retake actions', () => {
   it('shows "Passed!" badge when score >= 9 and "Keep practicing" when below', () => {
     const passedHtml = render(Results, {
       result: makeResult(9),
-      exercises,
       name: 'Test',
       levelId: 1 as LevelId,
       submitStatus: idleStatus,
@@ -341,7 +400,6 @@ describe('UI flow — Results next/back/retake actions', () => {
 
     const failedHtml = render(Results, {
       result: makeResult(8),
-      exercises,
       name: 'Test',
       levelId: 1 as LevelId,
       submitStatus: idleStatus,
@@ -357,7 +415,6 @@ describe('UI flow — Results next/back/retake actions', () => {
   it('renders the score number and "out of 10" label', () => {
     const html = render(Results, {
       result: makeResult(7),
-      exercises,
       name: 'Test',
       levelId: 1 as LevelId,
       submitStatus: idleStatus,
@@ -501,12 +558,9 @@ describe('UI flow — leaderboard level filter wiring', () => {
 // ---------------------------------------------------------------------------
 
 describe('UI flow — Level 10 no-next behavior (Results)', () => {
-  const exercises: readonly Exercise[] = buildLevels(EXERCISES)[9].exercises;
-
   it('does NOT render "Next level" when levelId=10 even if passed', () => {
     const html = render(Results, {
       result: makeResult(10),
-      exercises,
       name: 'Test',
       levelId: 10 as LevelId,
       submitStatus: idleStatus,
@@ -522,7 +576,6 @@ describe('UI flow — Level 10 no-next behavior (Results)', () => {
   it('shows the Level 10 completion message when Level 10 is passed', () => {
     const html = render(Results, {
       result: makeResult(10),
-      exercises,
       name: 'Test',
       levelId: 10 as LevelId,
       submitStatus: idleStatus,
@@ -539,7 +592,6 @@ describe('UI flow — Level 10 no-next behavior (Results)', () => {
   it('still shows "Try again" and "Back to levels" for Level 10 passed', () => {
     const html = render(Results, {
       result: makeResult(10),
-      exercises,
       name: 'Test',
       levelId: 10 as LevelId,
       submitStatus: idleStatus,
@@ -557,7 +609,6 @@ describe('UI flow — Level 10 no-next behavior (Results)', () => {
   it('does NOT show the completion message when Level 10 is not passed', () => {
     const html = render(Results, {
       result: makeResult(8),
-      exercises,
       name: 'Test',
       levelId: 10 as LevelId,
       submitStatus: idleStatus,
@@ -573,7 +624,6 @@ describe('UI flow — Level 10 no-next behavior (Results)', () => {
   it('does NOT show the completion message for a non-10 level even if passed', () => {
     const html = render(Results, {
       result: makeResult(10),
-      exercises: buildLevels(EXERCISES)[4].exercises,
       name: 'Test',
       levelId: 5 as LevelId,
       submitStatus: idleStatus,
@@ -644,7 +694,6 @@ describe('UI flow — interaction callback wiring', () => {
     const calls: string[] = [];
     const tree = Results({
       result: makeResult(9),
-      exercises: buildLevels(EXERCISES)[0].exercises,
       name: 'Test',
       levelId: 1,
       submitStatus: { kind: 'failed', attemptId: 'a1', message: 'offline' },
@@ -668,7 +717,6 @@ describe('UI flow — interaction callback wiring', () => {
     const calls: string[] = [];
     const tree = Results({
       result: makeResult(9),
-      exercises: buildLevels(EXERCISES)[0].exercises,
       name: 'Test',
       levelId: 1,
       submitStatus: { kind: 'submitting', attemptId: 'a1' },

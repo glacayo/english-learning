@@ -43,6 +43,9 @@ export interface LevelSelectProps {
  */
 export type LevelCardStatus = 'locked' | 'unlocked' | 'passed';
 
+/** Eyebrow copy above the level-select greeting. Exported so tests can assert without locking a free-form literal. */
+export const LEVEL_SELECT_EYEBROW = 'Your adventure map';
+
 /**
  * Derive the display status of a level card from the student's progress.
  *
@@ -60,6 +63,16 @@ export function levelCardStatus(
   return 'locked';
 }
 
+/**
+ * Human-readable status chip for a level card. Exported for tests that assert
+ * the visible labels without mounting React.
+ */
+export function statusLabel(status: LevelCardStatus): string {
+  if (status === 'passed') return 'Passed';
+  if (status === 'unlocked') return 'Start';
+  return 'Locked';
+}
+
 export function LevelSelect({
   levels,
   progress,
@@ -67,15 +80,26 @@ export function LevelSelect({
   onSelect,
   onViewLeaderboard,
 }: LevelSelectProps): JSX.Element {
+  const passedCount = levels.reduce((count, level) => {
+    return levelCardStatus(progress, level.id) === 'passed' ? count + 1 : count;
+  }, 0);
+
   return (
     <section className="card level-select" aria-labelledby="level-select-title">
-      <h2 id="level-select-title" className="level-select__title">
-        Hi, {name}! Pick a level
-      </h2>
-      <p className="level-select__hint">
-        Pass a level (9 out of 10) to unlock the next one. You can retake any
-        level you&rsquo;ve unlocked.
-      </p>
+      <header className="level-select__hero">
+        <p className="level-select__eyebrow">{LEVEL_SELECT_EYEBROW}</p>
+        <h2 id="level-select-title" className="level-select__title">
+          Hi, {name}! Pick a level
+        </h2>
+        <p className="level-select__hint">
+          Pass a level (9 out of 10) to unlock the next one. You can retake any
+          level you&rsquo;ve unlocked.
+        </p>
+        <p className="level-select__progress" aria-live="polite">
+          You passed <strong>{passedCount}</strong> of{' '}
+          <strong>{LEVEL_COUNT}</strong> levels
+        </p>
+      </header>
 
       <ul className="level-select__grid">
         {levels.map((level) => {
@@ -91,13 +115,15 @@ export function LevelSelect({
                 onClick={() => onSelect(level.id)}
                 aria-label={`${levelLabel(level.id)} — ${status}`}
               >
-                <span className="level-card__label">{level.label}</span>
-                <span className="level-card__status">
-                  {status === 'passed'
-                    ? 'Passed'
-                    : status === 'unlocked'
-                      ? 'Start'
-                      : 'Locked'}
+                <span className="level-card__number" aria-hidden="true">
+                  {level.id}
+                </span>
+                <span className="level-card__body">
+                  <span className="level-card__label">{level.label}</span>
+                  <span className="level-card__status">{statusLabel(status)}</span>
+                </span>
+                <span className="level-card__icon" aria-hidden="true">
+                  {status === 'passed' ? '✓' : status === 'locked' ? '🔒' : '▶'}
                 </span>
               </button>
               {locked ? (
