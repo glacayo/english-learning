@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  AppHeader,
   decideDraftLifecycle,
   decideLevelStartFromDraft,
+  studentLevelBadgeText,
 } from '../App';
 import {
   ATTEMPT_DRAFT_VERSION,
@@ -100,6 +104,38 @@ function applyAppDraftLifecycle(
 }
 
 describe('decideLevelStartFromDraft (App wiring)', () => {
+  it('renders current student and pick-level badge after name claim', () => {
+    const html = renderToStaticMarkup(createElement(AppHeader, { claimedName: 'Maria', levelId: 0 }));
+
+    expect(html).toContain('aria-label="Current student and level"');
+    expect(html).toContain('Student');
+    expect(html).toContain('Maria');
+    expect(html).toContain('Level');
+    expect(html).toContain('Pick a level');
+  });
+
+  it('renders current student and selected level badge after level selection or restore', () => {
+    const html = renderToStaticMarkup(createElement(AppHeader, { claimedName: 'Maria', levelId: 3 }));
+
+    expect(html).toContain('Maria');
+    expect(html).toContain('Level 3');
+    expect(html).not.toContain('Pick a level');
+  });
+
+  it('does not render student badges before name claim', () => {
+    const html = renderToStaticMarkup(createElement(AppHeader, { claimedName: '', levelId: 0 }));
+
+    expect(html).toContain('English Practice');
+    expect(html).not.toContain('Current student and level');
+    expect(html).not.toContain('Pick a level');
+  });
+
+  it('formats the student level badge text', () => {
+    expect(studentLevelBadgeText(0)).toBe('Pick a level');
+    expect(studentLevelBadgeText(1)).toBe('Level 1');
+    expect(studentLevelBadgeText(10)).toBe('Level 10');
+  });
+
   it('restores attemptId, answers, and current index from a valid draft', () => {
     const draft = sampleDraft();
     const decision = decideLevelStartFromDraft(draft);

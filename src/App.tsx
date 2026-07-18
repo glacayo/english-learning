@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { EXERCISES } from './content/exercises';
-import { buildLevels, getLevel } from './content/levels';
+import { buildLevels, getLevel, levelLabel } from './content/levels';
 import { gradeAttempt } from './domain/grading';
 import { normalizeName } from './domain/leaderboard';
 import { attemptReducer, createInitialAttempt } from './state/attemptReducer';
@@ -138,6 +138,40 @@ export function decideDraftLifecycle(input: {
   if (!input.nameClaimKey || !input.levelId) return 'noop';
   if (input.attemptState !== 'in-progress') return 'clear';
   return 'save';
+}
+
+/** Header badge copy for the selected level; before selection, prompt the next action. */
+export function studentLevelBadgeText(levelId: LevelId | 0): string {
+  return levelId ? levelLabel(levelId) : 'Pick a level';
+}
+
+export function AppHeader({
+  claimedName,
+  levelId,
+}: {
+  claimedName: string;
+  levelId: LevelId | 0;
+}): JSX.Element {
+  return (
+    <header className="app__header">
+      <div className="app__header-main">
+        <h1>English Practice</h1>
+
+        {claimedName ? (
+          <div className="app__student-status" aria-label="Current student and level">
+            <span className="app__student-chip">
+              <span className="app__student-chip-label">Student</span>
+              <span className="app__student-chip-value">{claimedName}</span>
+            </span>
+            <span className="app__student-chip app__student-chip--level">
+              <span className="app__student-chip-label">Level</span>
+              <span className="app__student-chip-value">{studentLevelBadgeText(levelId)}</span>
+            </span>
+          </div>
+        ) : null}
+      </div>
+    </header>
+  );
 }
 
 export function App(): JSX.Element {
@@ -499,9 +533,7 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      <header className="app__header">
-        <h1>English Practice</h1>
-      </header>
+      <AppHeader claimedName={claimedName} levelId={attempt.levelId} />
 
       <main className="app__main">
         {screen === 'name-entry' ? (
