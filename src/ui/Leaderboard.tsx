@@ -6,8 +6,8 @@ import { LEVEL_COUNT } from '../content/levels';
 /**
  * Leaderboard — shared cross-device rankings (shared-leaderboard spec).
  *
- * Lists every submitted attempt row (retakes produce multiple rows per
- * display name — v1 does NOT collapse to best-score-only). Ranking is done
+ * Lists one best row per normalized student name for the active view
+ * (retakes may exist in storage but collapse on read). Ranking is done
  * client-side by the pure `rankEntries` before reaching this component, so the
  * display order is always the spec order regardless of the server.
  *

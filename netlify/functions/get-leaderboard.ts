@@ -4,16 +4,16 @@
  * `GET /get-leaderboard[?level=N] → LeaderboardEntry[]`
  *
  * shared-leaderboard spec. Returns the bare ranked `LeaderboardEntry[]` JSON
- * array (design API contract) — every submitted attempt row, ranked by the
- * active view:
+ * array (design API contract) — one best row per normalized student name,
+ * ranked by the active view:
  *   - No `level` (global): `level` desc → `score` desc → `timestamp` asc →
  *     normalized name asc → `attemptId` asc. Higher levels outrank lower.
  *   - `?level=N` (per-level): only Level N rows, ranked by `score` desc then
  *     the same ties.
  *
  * `level` MUST be an integer in 1–10 when present. A non-integer or
- * out-of-range `level` is rejected with 400. Retakes produce multiple rows
- * per display name (v1 does not collapse to best-only).
+ * out-of-range `level` is rejected with 400. Retakes may persist multiple
+ * rows, but the active view collapses to the best-ranked row per name.
  *
  * PR 3: legacy rows (no `level`, 0–100 score) are hidden from reads by
  * `isValidEntry` and removed once by `scripts/reset-leaderboard.mjs`.

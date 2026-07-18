@@ -115,19 +115,19 @@ describe('submitScore', () => {
 });
 
 describe('getLeaderboard', () => {
-  it('returns ranked entries on success (bare array + global level-aware sort)', async () => {
+  it('returns ranked entries on success (bare array + collapse best per name)', async () => {
     const entries: LeaderboardEntry[] = [
       { attemptId: 'B', name: 'Maria', score: 7, level: 1, timestamp: 10 },
       { attemptId: 'A', name: 'Marco', score: 9, level: 1, timestamp: 5 },
-      { attemptId: 'C', name: 'Maria', score: 9, level: 1, timestamp: 5 }, // retake, same score/time as A -> name asc
+      { attemptId: 'C', name: 'Maria', score: 9, level: 1, timestamp: 5 }, // better Maria retake
     ];
     // design.md: GET /get-leaderboard → LeaderboardEntry[] (bare array)
     mockFetchOnce(jsonRes(entries));
     const r = await getLeaderboard();
     expect(r.ok).toBe(true);
     if (r.ok) {
-      // All same level: score desc → ties: marco < maria (A), then maria C, then B (7).
-      expect(r.value.map((e) => e.attemptId)).toEqual(['A', 'C', 'B']);
+      // Score desc + name ties: Marco (A) then best Maria (C); lower Maria (B) collapsed.
+      expect(r.value.map((e) => e.attemptId)).toEqual(['A', 'C']);
     }
   });
 
@@ -148,6 +148,7 @@ describe('getLeaderboard', () => {
     const entries: LeaderboardEntry[] = [
       { attemptId: 'L2a', name: 'Ana', score: 5, level: 2, timestamp: 10 },
       { attemptId: 'L2b', name: 'Bob', score: 9, level: 2, timestamp: 20 },
+      { attemptId: 'L2c', name: 'ana ', score: 8, level: 2, timestamp: 30 },
     ];
     mockFetchOnce(jsonRes(entries));
     const r = await getLeaderboard({ level: 2 });
@@ -157,8 +158,8 @@ describe('getLeaderboard', () => {
       expect.anything(),
     );
     if (r.ok) {
-      // per-level view: score desc (level key ignored).
-      expect(r.value.map((e) => e.attemptId)).toEqual(['L2b', 'L2a']);
+      // per-level view: score desc, with duplicate normalized Ana collapsed to L2c.
+      expect(r.value.map((e) => e.attemptId)).toEqual(['L2b', 'L2c']);
     }
   });
 

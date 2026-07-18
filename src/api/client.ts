@@ -158,8 +158,8 @@ export async function submitScore(
 
 /**
  * Fetch the shared leaderboard and rank it client-side using the pure
- * `rankEntries`. The leaderboard lists every attempt row; retakes produce
- * multiple rows per display name (shared-leaderboard spec).
+ * `rankEntries`. The active view collapses to one best row per normalized
+ * student name (shared-leaderboard spec); retakes stay persisted server-side.
  *
  * Ranking depends on the active view:
  *   - No `level` (global): `level` desc → `score` desc → `timestamp` asc →

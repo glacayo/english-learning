@@ -84,18 +84,35 @@ ranks first.
 - AND if normalized names are also equal, the entry with the lower
   `attemptId` ranks first
 
-### Requirement: Multiple Attempts Per Display Name
+### Requirement: One Best Row Per Normalized Student Name
 
-The leaderboard MUST list **every submitted attempt** as its own row. The same
-display name MAY appear more than once when a student retakes. v1 does **not**
-collapse to best-score-only; ranking applies to attempt rows, not to unique names.
+The leaderboard active view MUST display **one row per normalized student
+name**, keeping the attempt that ranks best under the active ranking keys.
+Retakes still persist as separate attempt rows (write path is unchanged and
+idempotent by `attemptId`), but duplicate names MUST collapse in the read/view
+path so only the best-ranked row remains visible.
 
-#### Scenario: Retake adds a second row for the same name
+- **Global view:** one row per normalized name overall; keep the row that ranks
+  best by global ranking (`level` desc → `score` desc → `timestamp` asc →
+  normalized name → `attemptId`).
+- **Per-level view:** one row per normalized name within that level; keep the
+  row that ranks best by per-level ranking (`score` desc → `timestamp` asc →
+  normalized name → `attemptId`).
 
-- GIVEN "Maria" already has a leaderboard row for `attemptId` A with score 70
-- WHEN "Maria" completes a retake with `attemptId` B and score 90
-- THEN the leaderboard MUST include both rows (A and B)
-- AND MUST NOT replace or hide the earlier attempt
+#### Scenario: Retake keeps only the best row for the same name
+
+- GIVEN "Ximena" already has a leaderboard row for `attemptId` A with score 5
+- WHEN "Ximena" completes a retake with `attemptId` B and score 9
+- THEN both rows MAY remain persisted under their own `attemptId` keys
+- AND the leaderboard active view MUST show only the best-ranked row (B, score 9)
+- AND MUST NOT show both A and B as separate visible leaderboard rows
+
+#### Scenario: Case and whitespace variants collapse to one visible name
+
+- GIVEN persisted rows for `"Ximena"` (score 5) and `"ximena "` (score 9)
+- WHEN the leaderboard is rendered
+- THEN only one visible row remains for normalized name `"ximena"`
+- AND that row MUST be the better-ranked attempt (score 9)
 
 ### Requirement: Cross-Device Reads
 

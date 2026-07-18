@@ -22,7 +22,8 @@ export function normalizeName(name: string): string {
 export type LeaderboardView = 'global' | 'per-level';
 
 /**
- * Rank leaderboard entries per the shared-leaderboard spec.
+ * Rank leaderboard entries per the shared-leaderboard spec, then collapse to
+ * one best row per normalized student name for the active view.
  *
  * The active `view` changes the primary ranking keys (spec "Ranking"):
  *   - Global view: `level` desc → `score` desc → `timestamp` asc →
@@ -36,8 +37,10 @@ export type LeaderboardView = 'global' | 'per-level';
  * views: earlier `timestamp` first; if equal, lower normalized name; if still
  * equal, lower `attemptId`.
  *
- * The leaderboard lists **every** submitted attempt row; it does NOT collapse
- * to best-score-only (multiple rows per display name are allowed for retakes).
+ * After ranking, the board keeps **one row per normalized name** — the
+ * best-ranked attempt for that identity under the active view. Retake rows
+ * remain persisted (write path is unchanged) but do not appear as duplicates
+ * in the active leaderboard view.
  *
  * Pure function: returns a new array; does not mutate the input.
  */
@@ -45,7 +48,29 @@ export function rankEntries(
   entries: readonly LeaderboardEntry[],
   view: LeaderboardView = 'global',
 ): LeaderboardEntry[] {
-  return [...entries].sort((a, b) => compareEntries(a, b, view));
+  const ranked = [...entries].sort((a, b) => compareEntries(a, b, view));
+  return collapseToBestPerName(ranked);
+}
+
+/**
+ * Keep the first (best-ranked) row for each normalized name.
+ * Callers MUST pass entries already sorted by `compareEntries` for the active
+ * view so the first hit is the winner.
+ *
+ * Pure function: returns a new array; does not mutate the input.
+ */
+export function collapseToBestPerName(
+  rankedEntries: readonly LeaderboardEntry[],
+): LeaderboardEntry[] {
+  const seen = new Set<string>();
+  const result: LeaderboardEntry[] = [];
+  for (const entry of rankedEntries) {
+    const key = normalizeName(entry.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
 }
 
 /**

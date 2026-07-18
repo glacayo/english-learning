@@ -39,14 +39,15 @@ describe('getRankedLeaderboard — global view (level desc → score desc → ti
     expect(await getRankedLeaderboard(store)).toEqual([]);
   });
 
-  it('lists every attempt row (retakes produce multiple rows per name)', async () => {
+  it('collapses retakes to one best row per normalized name', async () => {
     const store = makeStore({
-      'att-1': entry('att-1', 'Maria', 7, 10_000, 1),
-      'att-2': entry('att-2', 'Maria', 9, 20_000, 1),
+      'att-1': entry('att-1', 'Ximena', 5, 10_000, 1),
+      'att-2': entry('att-2', 'Ximena', 9, 20_000, 1),
     });
     const board = await getRankedLeaderboard(store);
-    expect(board).toHaveLength(2);
-    expect(board.map((e) => e.attemptId)).toEqual(['att-2', 'att-1']);
+    expect(board).toHaveLength(1);
+    expect(board.map((e) => e.attemptId)).toEqual(['att-2']);
+    expect(board[0].score).toBe(9);
   });
 
   it('higher level ranks above lower level regardless of score (global view)', async () => {
@@ -80,12 +81,12 @@ describe('getRankedLeaderboard — global view (level desc → score desc → ti
 
   it('breaks equal score+timestamp ties by normalized name asc then attemptId asc', async () => {
     const store = makeStore({
-      'att-3': entry('att-3', 'Maria', 8, 10_000, 2),
+      'att-3': entry('att-3', 'Zoe', 8, 10_000, 2),
       'att-1': entry('att-1', 'Marco', 8, 10_000, 2),
       'att-2': entry('att-2', 'Maria', 8, 10_000, 2),
     });
     const board = await getRankedLeaderboard(store);
-    // Same score + timestamp: marco (c) before maria (i); then within maria, att-2 before att-3.
+    // Same score + timestamp: marco < maria < zoe (normalized name asc).
     expect(board.map((e) => e.attemptId)).toEqual(['att-1', 'att-2', 'att-3']);
   });
 
@@ -126,6 +127,17 @@ describe('getRankedLeaderboard — per-level filter (score desc → ties)', () =
     });
     const board = await getRankedLeaderboard(store, 1);
     expect(board.map((e) => e.attemptId)).toEqual(['low-level-high-score', 'same-level-low-score']);
+  });
+
+  it('collapses duplicate normalized names within the selected level', async () => {
+    const store = makeStore({
+      'ximena-low': entry('ximena-low', 'Ximena', 5, 10, 1),
+      'ximena-high': entry('ximena-high', 'ximena ', 9, 20, 1),
+      'test-row': entry('test-row', 'Test', 6, 30, 1),
+      'other-level': entry('other-level', 'Ximena', 10, 5, 2),
+    });
+    const board = await getRankedLeaderboard(store, 1);
+    expect(board.map((e) => e.attemptId)).toEqual(['ximena-high', 'test-row']);
   });
 });
 
@@ -192,8 +204,9 @@ describe('getRankedLeaderboard — bounded concurrent reads', () => {
   it('reads multiple keys concurrently (not strictly sequential)', async () => {
     const keys = Array.from({ length: 8 }, (_, i) => `att-${i}`);
     const initial: Record<string, unknown> = {};
-    for (const key of keys) {
-      initial[key] = entry(key, 'Student', 5, 1_000, 1);
+    for (const [i, key] of keys.entries()) {
+      // Distinct names so collapse-by-name does not hide concurrency coverage.
+      initial[key] = entry(key, `Student-${i}`, 5, 1_000, 1);
     }
 
     let inFlight = 0;

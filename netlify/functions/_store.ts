@@ -26,7 +26,7 @@
  *
  * Spec references:
  * - student-session: normalized identity, retakes allowed, new attemptId per retake
- * - shared-leaderboard: idempotent submit by attemptId, every attempt is a row
+ * - shared-leaderboard: idempotent submit by attemptId; active view collapses to one best row per name
  * - netlify-deployment: shared persistence across function invocations
  */
 
