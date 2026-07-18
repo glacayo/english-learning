@@ -354,3 +354,69 @@ describe('attemptReducer — reset', () => {
     expect(s.total).toBe(0);
   });
 });
+
+describe('attemptReducer — restore', () => {
+  it('restores an in-progress attempt with the same answers and attemptId', () => {
+    const s = attemptReducer(createInitialAttempt(), {
+      type: 'restore',
+      name: 'Maria',
+      attemptId: 'att-mid',
+      levelId: 1,
+      answers: [
+        { exerciseId: 'e1', given: 'goes' },
+        { exerciseId: 'e2', given: 'went' },
+      ],
+      total: LEVEL_SIZE,
+    });
+    expect(s.state).toBe('in-progress');
+    expect(s.attemptId).toBe('att-mid');
+    expect(s.name).toBe('Maria');
+    expect(s.levelId).toBe(1);
+    expect(s.total).toBe(LEVEL_SIZE);
+    expect(s.answers).toEqual([
+      { exerciseId: 'e1', given: 'goes' },
+      { exerciseId: 'e2', given: 'went' },
+    ]);
+  });
+
+  it('rejects a restore with a full answer list (completed payload)', () => {
+    const before = createInitialAttempt();
+    const answers = Array.from({ length: LEVEL_SIZE }, (_, i) => ({
+      exerciseId: `e${i + 1}`,
+      given: 'x',
+    }));
+    const s = attemptReducer(before, {
+      type: 'restore',
+      name: 'Maria',
+      attemptId: 'att-full',
+      levelId: 1,
+      answers,
+      total: LEVEL_SIZE,
+    });
+    expect(s).toBe(before);
+  });
+
+  it('rejects empty name or attemptId on restore', () => {
+    const before = createInitialAttempt();
+    expect(
+      attemptReducer(before, {
+        type: 'restore',
+        name: '   ',
+        attemptId: 'att',
+        levelId: 1,
+        answers: [],
+        total: LEVEL_SIZE,
+      }),
+    ).toBe(before);
+    expect(
+      attemptReducer(before, {
+        type: 'restore',
+        name: 'Maria',
+        attemptId: '',
+        levelId: 1,
+        answers: [],
+        total: LEVEL_SIZE,
+      }),
+    ).toBe(before);
+  });
+});

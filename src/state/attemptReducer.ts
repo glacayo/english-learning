@@ -85,6 +85,19 @@ export type AttemptAction =
       exerciseIds: readonly string[];
     }
   | { type: 'retake'; attemptId: string }
+  | {
+      /**
+       * Restore an in-progress attempt from a refresh-safe draft (student-session
+       * refresh resume). Replaces the current state with the saved answers,
+       * attemptId, level, and total so the child continues where they left off.
+       */
+      type: 'restore';
+      name: string;
+      attemptId: string;
+      levelId: LevelId;
+      answers: readonly AttemptAnswer[];
+      total: number;
+    }
   | { type: 'reset' };
 
 /**
@@ -122,17 +135,20 @@ export function createInitialAttempt(): AttemptData {
  *                values and filling blanks for skipped/unanswered items, then
  *                transitions to `completed`. Used by Finish so Skip/early
  *                navigation cannot leave results with a null grade.
- *   - `retake` : starts a new `in-progress` attempt reusing the existing name,
- *                `levelId`, and `total`, but with a NEW `attemptId`. The
- *                previous answers are cleared. Allowed from `completed` (the
- *                main retake path) and also defensively from
- *                `in-progress`/`not-started`.
- *   - `reset`  : returns to `not-started` with no name, no answers, no
- *                attemptId, and no level. Useful for full restart / switching
- *                student.
- *
- * Pure function: returns a new `AttemptData` and never mutates `state`.
- */
+  *   - `retake` : starts a new `in-progress` attempt reusing the existing name,
+  *                `levelId`, and `total`, but with a NEW `attemptId`. The
+  *                previous answers are cleared. Allowed from `completed` (the
+  *                main retake path) and also defensively from
+  *                `in-progress`/`not-started`.
+  *   - `restore`: replaces state with a previously persisted in-progress draft
+  *                (same attemptId, answers, level). Rejects invalid / completed
+  *                payloads so corrupt drafts never crash the session.
+  *   - `reset`  : returns to `not-started` with no name, no answers, no
+  *                attemptId, and no level. Useful for full restart / switching
+  *                student.
+  *
+  * Pure function: returns a new `AttemptData` and never mutates `state`.
+  */
 export function attemptReducer(
   state: AttemptData,
   action: AttemptAction,
@@ -209,6 +225,35 @@ export function attemptReducer(
         levelId: state.levelId,
         answers: [],
         total: state.total,
+      };
+    }
+
+    case 'restore': {
+      const trimmedName = action.name.trim();
+      if (trimmedName.length === 0) return state;
+      if (!action.attemptId) return state;
+      if (toLevelId(action.levelId) === null) return state;
+      if (!Number.isInteger(action.total) || action.total <= 0) return state;
+      // Only restore incomplete attempts; a full answer list is "completed".
+      if (action.answers.length >= action.total) return state;
+
+      const answers: AttemptAnswer[] = [];
+      const seen = new Set<string>();
+      for (const a of action.answers) {
+        if (typeof a.exerciseId !== 'string' || a.exerciseId.length === 0) return state;
+        if (typeof a.given !== 'string') return state;
+        if (seen.has(a.exerciseId)) return state;
+        seen.add(a.exerciseId);
+        answers.push({ exerciseId: a.exerciseId, given: a.given });
+      }
+
+      return {
+        state: 'in-progress',
+        attemptId: action.attemptId,
+        name: trimmedName,
+        levelId: action.levelId,
+        answers,
+        total: action.total,
       };
     }
 

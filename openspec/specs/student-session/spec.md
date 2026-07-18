@@ -98,3 +98,57 @@ unlocked level.
 - GIVEN a completed attempt for Level 2
 - WHEN the student chooses "try again" from the results screen
 - THEN a new attempt MUST start bound to Level 2 with a new `attemptId`
+
+### Requirement: Refresh-Safe In-Progress Drafts
+
+The system MUST persist in-progress attempts on the same device (localStorage)
+keyed by normalized name identity (`nameClaimKey`) and level so a browser
+refresh does not discard mid-level answers. This is same-device recovery only;
+it MUST NOT use cookies, auth, or cross-device sync.
+
+A valid draft MUST include enough state to resume: display name, nameClaimKey,
+attemptId, levelId, answers, total, and current exercise index. The loader MUST
+defensively ignore stale, corrupt, version-mismatched, catalog-incompatible, or
+identity-inconsistent drafts (including cases where the stored display name does
+not normalize to the draft's `nameClaimKey` / storage key) instead of crashing.
+Completing, retaking, or otherwise restarting an attempt for that name+level
+MUST clear the draft so the next start is fresh.
+
+#### Boundary: name-only identity (not authentication or privacy)
+
+Same-device draft restore is a **convenience feature** for refresh recovery under
+the product's explicit name-only identity model. It is **not** an authentication
+boundary and **not** a privacy boundary. Drafts are scoped only by normalized
+display name + level on that browser: any person on a shared device who enters
+the same normalized name can restore that name's in-progress draft. v1 does not
+add PIN, password, or other auth for drafts.
+
+#### Scenario: Mid-level refresh resumes the same attempt
+
+- GIVEN "Maria" started Level 1 and answered some exercises
+- AND the browser refreshes (session memory is cleared)
+- WHEN "Maria" (same normalized name) claims the name again and selects Level 1
+- THEN the system MUST restore the prior in-progress attempt
+- AND MUST keep the same `attemptId`, recorded answers, and current exercise index
+- AND MUST show the exercise runner in progress (not question 1 with empty answers)
+
+#### Scenario: Different names do not share drafts
+
+- GIVEN "Maria" has an in-progress Level 1 draft on the device
+- WHEN "Marco" claims a name and selects Level 1
+- THEN the system MUST start a fresh attempt for Marco
+- AND MUST NOT load Maria's answers or attemptId
+
+#### Scenario: Same normalized name on a shared device can restore the draft
+
+- GIVEN "Maria" has an in-progress Level 1 draft on a shared device
+- WHEN another person types the same normalized name (e.g. "maria" / "MARIA") and selects Level 1
+- THEN the system MUST restore that draft (by design for name-only identity)
+- AND this MUST NOT be treated as proof of identity or a privacy guarantee
+
+#### Scenario: Completed or retaken attempts do not restore old drafts
+
+- GIVEN "Maria" completed (or retakes) Level 1
+- WHEN "Maria" later starts Level 1 again
+- THEN the system MUST start a fresh attempt with a new `attemptId`
+- AND MUST NOT restore the previous answers or exercise index

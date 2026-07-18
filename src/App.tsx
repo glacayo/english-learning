@@ -5,6 +5,14 @@ import { buildLevels, getLevel } from './content/levels';
 import { gradeAttempt } from './domain/grading';
 import { normalizeName } from './domain/leaderboard';
 import { attemptReducer, createInitialAttempt } from './state/attemptReducer';
+import {
+  buildDraftFromAttempt,
+  clearDraft,
+  getDraftStorage,
+  loadDraft,
+  saveDraft,
+  type AttemptDraft,
+} from './state/attemptDraftStore';
 import { useLevelProgress } from './state/levelProgressStore';
 import {
   claimName,
@@ -19,6 +27,7 @@ import type {
   LeaderboardEntry,
   LevelId,
 } from './domain/types';
+import type { AttemptAnswer } from './state/attemptReducer';
 import { NameEntry } from './ui/NameEntry';
 import { ExerciseRunner } from './ui/ExerciseRunner';
 import { Results, type SubmitStatus } from './ui/Results';
@@ -80,6 +89,55 @@ export function resolveAttemptName(
     name,
     nameClaimKey: normalizeName(name),
   };
+}
+
+/**
+ * App-level decision when selecting a level: restore a validated draft or start
+ * a fresh attempt. Pure helper — `loadDraft` validation happens upstream.
+ */
+export type LevelStartDecision =
+  | {
+      kind: 'restore';
+      name: string;
+      attemptId: string;
+      levelId: LevelId;
+      answers: readonly AttemptAnswer[];
+      total: number;
+      currentExerciseIndex: number;
+    }
+  | { kind: 'start-fresh' };
+
+export function decideLevelStartFromDraft(draft: AttemptDraft | null): LevelStartDecision {
+  if (!draft) return { kind: 'start-fresh' };
+  return {
+    kind: 'restore',
+    name: draft.name,
+    attemptId: draft.attemptId,
+    levelId: draft.levelId,
+    answers: draft.answers,
+    total: draft.total,
+    currentExerciseIndex: draft.currentExerciseIndex,
+  };
+}
+
+/**
+ * App-level draft side-effect decision for the persistence effect and for
+ * complete/retake cleanup contracts.
+ *
+ * - missing identity or level → no storage write
+ * - attempt not in-progress (completed / idle / etc.) → clear draft
+ * - in-progress → save draft
+ */
+export type DraftLifecycleDecision = 'save' | 'clear' | 'noop';
+
+export function decideDraftLifecycle(input: {
+  nameClaimKey: string;
+  levelId: LevelId | 0 | null | undefined;
+  attemptState: string;
+}): DraftLifecycleDecision {
+  if (!input.nameClaimKey || !input.levelId) return 'noop';
+  if (input.attemptState !== 'in-progress') return 'clear';
+  return 'save';
 }
 
 export function App(): JSX.Element {
@@ -162,18 +220,41 @@ export function App(): JSX.Element {
       if (!isUnlocked(levelId)) return;
       const level = getLevel(levels, levelId);
       if (!level) return;
-      dispatch({
-        type: 'start',
-        name: claimedName,
-        attemptId: createAttemptId(),
-        levelId,
-        total: level.exercises.length,
+
+      // Same-device refresh resume: if an in-progress draft exists for this
+      // normalized name + level, restore answers / attemptId / index instead of
+      // starting from question 1 (student-session: refresh-safe drafts).
+      const exerciseIds = level.exercises.map((e) => e.id);
+      const draft = loadDraft(getDraftStorage(), nameClaimKey, levelId, {
+        expectedTotal: level.exercises.length,
+        expectedExerciseIds: exerciseIds,
       });
-      setExerciseIndex(0);
+      const startDecision = decideLevelStartFromDraft(draft);
+
+      if (startDecision.kind === 'restore') {
+        dispatch({
+          type: 'restore',
+          name: startDecision.name,
+          attemptId: startDecision.attemptId,
+          levelId: startDecision.levelId,
+          answers: startDecision.answers,
+          total: startDecision.total,
+        });
+        setExerciseIndex(startDecision.currentExerciseIndex);
+      } else {
+        dispatch({
+          type: 'start',
+          name: claimedName,
+          attemptId: createAttemptId(),
+          levelId,
+          total: level.exercises.length,
+        });
+        setExerciseIndex(0);
+      }
       setSubmitStatus({ kind: 'idle' });
       setScreen('exercise-runner');
     },
-    [claimedName, levels, isUnlocked],
+    [claimedName, levels, isUnlocked, nameClaimKey],
   );
 
   const handleSelectLevel = useCallback(
@@ -201,8 +282,18 @@ export function App(): JSX.Element {
       type: 'complete',
       exerciseIds: currentLevel.exercises.map((e) => e.id),
     });
+    // Completed attempts must not resume after refresh.
+    if (
+      decideDraftLifecycle({
+        nameClaimKey,
+        levelId: currentLevel.id,
+        attemptState: 'completed',
+      }) === 'clear'
+    ) {
+      clearDraft(getDraftStorage(), nameClaimKey, currentLevel.id);
+    }
     setScreen('results');
-  }, [currentLevel]);
+  }, [currentLevel, nameClaimKey]);
 
   // After the attempt transitions to completed, submit the score and mark the
   // level as passed when the score meets the threshold. Submit status is
@@ -280,12 +371,50 @@ export function App(): JSX.Element {
     }
   }, [screen, attempt.state, submitStatus.kind, handleCompleted]);
 
+  // Persist in-progress drafts so a browser refresh can resume the same attempt.
+  // Clear when the attempt leaves in-progress (auto-complete on last answer, etc.).
+  useEffect(() => {
+    const lifecycle = decideDraftLifecycle({
+      nameClaimKey,
+      levelId: attempt.levelId,
+      attemptState: attempt.state,
+    });
+    if (lifecycle === 'noop' || !attempt.levelId) return;
+    if (lifecycle === 'clear') {
+      clearDraft(getDraftStorage(), nameClaimKey, attempt.levelId);
+      return;
+    }
+    if (!currentLevel) return;
+    const draft = buildDraftFromAttempt({
+      nameClaimKey,
+      name: attempt.name,
+      attemptId: attempt.attemptId,
+      levelId: attempt.levelId,
+      answers: attempt.answers,
+      total: attempt.total,
+      currentExerciseIndex: exerciseIndex,
+      exerciseIds: currentLevel.exercises.map((e) => e.id),
+      state: attempt.state,
+    });
+    if (draft) saveDraft(getDraftStorage(), draft);
+  }, [attempt, exerciseIndex, nameClaimKey, currentLevel]);
+
   // ---- Retake / next level / restart --------------------------------------
 
   const handleRetake = useCallback(() => {
     if (!attempt.levelId) return;
     // Retake targets the SAME level (student-session spec). The reducer
     // preserves the levelId; a fresh attemptId is supplied.
+    // Clear any in-progress draft first so retake never resumes old answers.
+    if (
+      decideDraftLifecycle({
+        nameClaimKey,
+        levelId: attempt.levelId,
+        attemptState: 'completed',
+      }) === 'clear'
+    ) {
+      clearDraft(getDraftStorage(), nameClaimKey, attempt.levelId);
+    }
     // Do not block on leaderboard submit: local progression must stay usable
     // while submit is in flight (may hang). Resetting status to idle + the
     // attemptId guards in handleCompleted drop any stale response.
@@ -293,7 +422,7 @@ export function App(): JSX.Element {
     setExerciseIndex(0);
     setSubmitStatus({ kind: 'idle' });
     setScreen('exercise-runner');
-  }, [attempt.levelId]);
+  }, [attempt.levelId, nameClaimKey]);
 
   const handleNextLevel = useCallback(() => {
     if (!attempt.levelId) return;
