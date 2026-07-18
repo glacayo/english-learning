@@ -60,9 +60,9 @@ import { getStore } from '@netlify/blobs';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyForReset } from '../netlify/functions/leaderboard-classifier.mjs';
+import { classifyForReset } from '../netlify/functions/_leaderboard-classifier.mjs';
 
-export { classifyForReset } from '../netlify/functions/leaderboard-classifier.mjs';
+export { classifyForReset } from '../netlify/functions/_leaderboard-classifier.mjs';
 
 const LEADERBOARD_STORE = 'leaderboard';
 

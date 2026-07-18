@@ -21,7 +21,7 @@
 
 import { getLeaderboardStore, getRankedLeaderboard, type StoreLike } from './_store';
 import { json, withStoreReporting } from './_http';
-import { toLeaderboardLevel } from './leaderboard-classifier.mjs';
+import { toLeaderboardLevel } from './_leaderboard-classifier.mjs';
 import type { LeaderboardEntry, LevelId } from '../../src/domain/types';
 
 /** Pure handler with an injectable store — the unit-test entry point. */

@@ -82,7 +82,7 @@ The following blockers identified by the fresh 4R review were addressed after ar
 
 4. **Resilience — wrong-target/ungated reset apply**: Added `--confirm-site-id=<id>` gate via `verifyTargetConfirm()`. Destructive `--apply` in explicit mode requires the flag to match the resolved `NETLIFY_SITE_ID` exactly. Context mode is exempt (pins site already). Tests and self-test checks added. Push to main still requires manual preview/prod reset/smoke (documented, not automated).
 
-5. **Resilience — serverless API error reporting**: Added `netlify/functions/report-error.ts` — a minimal structured error reporting hook that is safe by default (logs structured JSON to `console.error`) and optionally reports to an env-configured endpoint (`ERROR_REPORT_ENDPOINT`) without blocking responses. No paid services or new secrets. Wired into all three function handlers. Tests added.
+5. **Resilience — serverless API error reporting**: Added `netlify/functions/_report-error.ts` — a minimal structured error reporting hook that is safe by default (logs structured JSON to `console.error`) and optionally reports to an env-configured endpoint (`ERROR_REPORT_ENDPOINT`) without blocking responses. No paid services or new secrets. Wired into all three function handlers. Tests added.
 
 6. **Security — progression authorization boundary**: Adjudicated against accepted design. Progression is intentionally same-browser/local only (localStorage per claimed-name identity), NOT server-authenticated. This is a known non-security boundary documented in verify/archive. API docs do not claim authorization/integrity for unlocks. No server-side auth implemented (would require a new auth system not in the current architecture).
 

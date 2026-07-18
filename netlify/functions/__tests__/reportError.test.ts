@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
-import { reportError, resolveReportEndpoint } from '../report-error';
+import { reportError, resolveReportEndpoint } from '../_report-error';
 
 describe('resolveReportEndpoint', () => {
   it('returns the trimmed endpoint when ERROR_REPORT_ENDPOINT is set', () => {

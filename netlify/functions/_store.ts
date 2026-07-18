@@ -37,9 +37,9 @@ import {
   classifyForReset,
   isValidLevelValue,
   isValidScoreValue,
-} from './leaderboard-classifier.mjs';
+} from './_leaderboard-classifier.mjs';
 
-export { classifyForReset } from './leaderboard-classifier.mjs';
+export { classifyForReset } from './_leaderboard-classifier.mjs';
 
 /** Names store name (Netlify Blobs store identifier). */
 export const NAMES_STORE = 'names';

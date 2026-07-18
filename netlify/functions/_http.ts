@@ -1,4 +1,4 @@
-import { reportError } from './report-error';
+import { reportError } from './_report-error';
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

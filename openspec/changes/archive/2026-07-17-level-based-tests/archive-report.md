@@ -30,7 +30,7 @@ A fresh 4R review identified six actionable blockers after archiving. All were a
 | 2. UI flow behavior tests | `src/ui/__tests__/uiFlow.test.tsx` — 25 tests via `react-dom/server` |
 | 3. Reset rollback artifact | `writeRollbackSnapshot()` — timestamped JSON before deletion |
 | 4. Wrong-target reset gate | `--confirm-site-id=<id>` via `verifyTargetConfirm()` |
-| 5. Serverless error reporting | `netlify/functions/report-error.ts` — structured, safe, optional endpoint |
+| 5. Serverless error reporting | `netlify/functions/_report-error.ts` — structured, safe, optional endpoint |
 | 6. Progression authorization | Adjudicated: same-browser/local only by design; documented as known non-security boundary |
 
 **Post-fix verification**: typecheck PASS, test PASS (24 files, 348 tests), build PASS, self-test PASS (9+6 checks), apply guard blocks correctly.

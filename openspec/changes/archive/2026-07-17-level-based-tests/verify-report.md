@@ -124,7 +124,7 @@ A fresh 4R review identified six actionable blockers that were addressed after a
 | 2. UI flow only helper-tested | Reliability | Added 25 behavior-level component integration tests via `react-dom/server` (no new deps) |
 | 3. reset `--apply` irreversible without rollback artifact | Resilience | Added `writeRollbackSnapshot()` — timestamped JSON snapshot before deletion |
 | 4. wrong-target/ungated reset apply | Resilience | Added `--confirm-site-id=<id>` gate via `verifyTargetConfirm()` |
-| 5. serverless API only console.error visibility | Resilience | Added `report-error.ts` structured error hook (safe by default, optional endpoint) |
+| 5. serverless API only console.error visibility | Resilience | Added `_report-error.ts` structured error hook (safe by default, optional endpoint) |
 | 6. Security review claimed backend should authorize progression | Security | Adjudicated: progression is intentionally same-browser/local only; documented as known non-security boundary; no server-side auth added |
 
 ### Verification After Post-Archive Fix
