@@ -96,18 +96,18 @@ describe('claimName', () => {
 });
 
 describe('submitScore', () => {
-  it('posts the full payload and returns ok on success', async () => {
+  it('posts the full payload (with level) and returns ok on success', async () => {
     mockFetchOnce(jsonRes({ ok: true }));
-    const r = await submitScore({ name: 'Maria', score: 90, attemptId: 'A' });
+    const r = await submitScore({ name: 'Maria', score: 9, level: 1, attemptId: 'A' });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toEqual({ ok: true });
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(JSON.parse(call[1].body)).toEqual({ name: 'Maria', score: 90, attemptId: 'A' });
+    expect(JSON.parse(call[1].body)).toEqual({ name: 'Maria', score: 9, level: 1, attemptId: 'A' });
   });
 
   it('returns unavailable on network failure (retry safe with same attemptId)', async () => {
     mockFetchOnce(new Error('network'));
-    const r = await submitScore({ name: 'Maria', score: 90, attemptId: 'A' });
+    const r = await submitScore({ name: 'Maria', score: 9, level: 1, attemptId: 'A' });
     expect(r.ok).toBe(false);
     const err = r as ApiError;
     expect(err.reason).toBe('unavailable');
@@ -115,27 +115,57 @@ describe('submitScore', () => {
 });
 
 describe('getLeaderboard', () => {
-  it('returns ranked entries on success (bare array contract + client-side sort)', async () => {
+  it('returns ranked entries on success (bare array + global level-aware sort)', async () => {
     const entries: LeaderboardEntry[] = [
-      { attemptId: 'B', name: 'Maria', score: 70, timestamp: 10 },
-      { attemptId: 'A', name: 'Marco', score: 90, timestamp: 5 },
-      { attemptId: 'C', name: 'Maria', score: 90, timestamp: 5 }, // retake, same score/time as A -> name asc
+      { attemptId: 'B', name: 'Maria', score: 7, level: 1, timestamp: 10 },
+      { attemptId: 'A', name: 'Marco', score: 9, level: 1, timestamp: 5 },
+      { attemptId: 'C', name: 'Maria', score: 9, level: 1, timestamp: 5 }, // retake, same score/time as A -> name asc
     ];
     // design.md: GET /get-leaderboard → LeaderboardEntry[] (bare array)
     mockFetchOnce(jsonRes(entries));
     const r = await getLeaderboard();
     expect(r.ok).toBe(true);
     if (r.ok) {
-      // Same score 90 and timestamp 5 -> normalized name asc: "marco" < "maria"
-      // (c < i), so A (Marco) ranks above C (Maria); B (70) last.
+      // All same level: score desc → ties: marco < maria (A), then maria C, then B (7).
       expect(r.value.map((e) => e.attemptId)).toEqual(['A', 'C', 'B']);
+    }
+  });
+
+  it('global view ranks higher level above lower level regardless of score', async () => {
+    const entries: LeaderboardEntry[] = [
+      { attemptId: 'L1', name: 'Ana', score: 10, level: 1, timestamp: 100 },
+      { attemptId: 'L10', name: 'Bob', score: 7, level: 10, timestamp: 200 },
+    ];
+    mockFetchOnce(jsonRes(entries));
+    const r = await getLeaderboard();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.map((e) => e.attemptId)).toEqual(['L10', 'L1']);
+    }
+  });
+
+  it('appends ?level=N for per-level reads and ranks by score-first', async () => {
+    const entries: LeaderboardEntry[] = [
+      { attemptId: 'L2a', name: 'Ana', score: 5, level: 2, timestamp: 10 },
+      { attemptId: 'L2b', name: 'Bob', score: 9, level: 2, timestamp: 20 },
+    ];
+    mockFetchOnce(jsonRes(entries));
+    const r = await getLeaderboard({ level: 2 });
+    expect(r.ok).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      `${BASE}/get-leaderboard?level=2`,
+      expect.anything(),
+    );
+    if (r.ok) {
+      // per-level view: score desc (level key ignored).
+      expect(r.value.map((e) => e.attemptId)).toEqual(['L2b', 'L2a']);
     }
   });
 
   it('returns bad-response for wrapped { entries } shape (not the design contract)', async () => {
     mockFetchOnce(
       jsonRes({
-        entries: [{ attemptId: 'A', name: 'Maria', score: 90, timestamp: 5 }],
+        entries: [{ attemptId: 'A', name: 'Maria', score: 9, level: 1, timestamp: 5 }],
       }),
     );
     const r = await getLeaderboard();

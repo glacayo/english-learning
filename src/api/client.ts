@@ -2,10 +2,14 @@ import type {
   ClaimNameRequest,
   ClaimNameResponse,
   LeaderboardEntry,
+  LevelId,
   SubmitScoreRequest,
   SubmitScoreResponse,
 } from '../domain/types';
-import { rankEntries } from '../domain/leaderboard';
+import {
+  rankEntries,
+  type LeaderboardView,
+} from '../domain/leaderboard';
 
 /**
  * Typed fetch wrappers for the three Netlify Functions
@@ -59,19 +63,10 @@ function toError(reason: ApiErrorReason, message: string, status?: number): ApiE
   return { ok: false, reason, status, message };
 }
 
-async function postJSON<T>(
-  url: string,
-  body: unknown,
-  signal?: AbortSignal,
-): Promise<ApiResult<T>> {
+async function requestJSON<T>(url: string, init: RequestInit): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    });
+    res = await fetch(url, init);
   } catch {
     return toError(
       'unavailable',
@@ -97,33 +92,21 @@ async function postJSON<T>(
   return { ok: true, value: data as T };
 }
 
+async function postJSON<T>(
+  url: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<ApiResult<T>> {
+  return requestJSON<T>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 async function getJSON<T>(url: string, signal?: AbortSignal): Promise<ApiResult<T>> {
-  let res: Response;
-  try {
-    res = await fetch(url, { signal });
-  } catch {
-    return toError(
-      'unavailable',
-      'No se pudo conectar con el servidor. Mostrando resultados locales.',
-    );
-  }
-
-  if (!res.ok) {
-    return toError(
-      'bad-status',
-      `El servidor respondió ${res.status}. Mostrando resultados locales.`,
-      res.status,
-    );
-  }
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    return toError('bad-response', 'Respuesta del servidor no válida.');
-  }
-
-  return { ok: true, value: data as T };
+  return requestJSON<T>(url, { signal });
 }
 
 /**
@@ -175,32 +158,43 @@ export async function submitScore(
 
 /**
  * Fetch the shared leaderboard and rank it client-side using the pure
- * `rankEntries` (score desc → timestamp asc → normalized name asc →
- * attemptId asc). The leaderboard lists every attempt row; retakes produce
+ * `rankEntries`. The leaderboard lists every attempt row; retakes produce
  * multiple rows per display name (shared-leaderboard spec).
  *
+ * Ranking depends on the active view:
+ *   - No `level` (global): `level` desc → `score` desc → `timestamp` asc →
+ *     normalized name asc → `attemptId` asc. Higher levels outrank lower
+ *     levels regardless of score (spec "Higher level ranks above lower level").
+ *   - `level` set (per-level): the server filters to that level and the rows
+ *     are ranked by `score` desc then ties (`per-level` view).
+ *
  * Contract (design.md, authoritative for PR 4):
- *   `GET /get-leaderboard → LeaderboardEntry[]`
+ *   `GET /get-leaderboard[?level=N] → LeaderboardEntry[]`
  * A bare JSON array is required. Wrapped shapes such as `{ entries: [...] }`
  * are treated as `bad-response` so the Netlify function and client stay
  * unambiguous.
  *
  * On transport failure returns an `ApiError`; the UI falls back to local /
  * empty results. The ranking is deterministic and independent of the server.
+ *
+ * `level` MUST be an integer LevelId (1–10). The query string `?level=N` is
+ * only appended for per-level reads.
  */
 export async function getLeaderboard(
-  options: ApiClientOptions = {},
+  options: ApiClientOptions & { level?: LevelId } = {},
 ): Promise<ApiResult<LeaderboardEntry[]>> {
   const base = options.baseURL ?? DEFAULT_BASE;
-  const result = await getJSON<unknown>(
-    endpoint(base, 'get-leaderboard'),
-    options.signal,
-  );
+  let url = endpoint(base, 'get-leaderboard');
+  if (options.level !== undefined) {
+    url += `?level=${options.level}`;
+  }
+  const view: LeaderboardView = options.level !== undefined ? 'per-level' : 'global';
+  const result = await getJSON<unknown>(url, options.signal);
   if (!result.ok) return result;
   if (!Array.isArray(result.value)) {
     return toError('bad-response', 'Respuesta del servidor no válida.');
   }
-  return { ok: true, value: rankEntries(result.value as LeaderboardEntry[]) };
+  return { ok: true, value: rankEntries(result.value as LeaderboardEntry[], view) };
 }
 
 /**
@@ -219,4 +213,4 @@ export function createAttemptId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export type { ClaimNameRequest, ClaimNameResponse, SubmitScoreRequest, SubmitScoreResponse, LeaderboardEntry };
+export type { ClaimNameRequest, ClaimNameResponse, SubmitScoreRequest, SubmitScoreResponse, LeaderboardEntry, LevelId };

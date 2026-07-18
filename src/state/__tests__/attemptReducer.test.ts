@@ -4,23 +4,42 @@ import {
   createInitialAttempt,
   type AttemptData,
 } from '../attemptReducer';
+import { LEVEL_SIZE } from '../../content/levels';
 
 function inProgress(overrides: Partial<AttemptData> = {}): AttemptData {
   return {
     state: 'in-progress',
     attemptId: 'att-1',
     name: 'Maria',
+    levelId: 2,
     answers: [],
-    total: 4,
+    total: LEVEL_SIZE,
+    ...overrides,
+  };
+}
+
+function startAction(overrides: Partial<{
+  name: string;
+  attemptId: string;
+  levelId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  total: number;
+}> = {}) {
+  return {
+    type: 'start' as const,
+    name: 'Maria',
+    attemptId: 'att-1',
+    levelId: 2 as const,
+    total: LEVEL_SIZE,
     ...overrides,
   };
 }
 
 describe('createInitialAttempt', () => {
-  it('starts in not-started with no name or answers', () => {
+  it('starts in not-started with no name, level, or answers', () => {
     const s = createInitialAttempt();
     expect(s.state).toBe('not-started');
     expect(s.name).toBe('');
+    expect(s.levelId).toBe(0);
     expect(s.answers).toHaveLength(0);
     expect(s.attemptId).toBe('');
     expect(s.total).toBe(0);
@@ -35,50 +54,49 @@ describe('createInitialAttempt', () => {
 });
 
 describe('attemptReducer — start', () => {
-  it('transitions not-started -> in-progress with a valid name and attemptId', () => {
+  it('transitions not-started -> in-progress with name, attemptId, and levelId', () => {
+    const s = attemptReducer(createInitialAttempt(), startAction());
+    expect(s.state).toBe('in-progress');
+    expect(s.name).toBe('Maria');
+    expect(s.attemptId).toBe('att-1');
+    expect(s.levelId).toBe(2);
+    expect(s.total).toBe(LEVEL_SIZE);
+    expect(s.answers).toHaveLength(0);
+  });
+
+  it('defaults total to LEVEL_SIZE (10) when omitted', () => {
     const s = attemptReducer(createInitialAttempt(), {
       type: 'start',
       name: 'Maria',
       attemptId: 'att-1',
-      total: 4,
+      levelId: 3,
     });
-    expect(s.state).toBe('in-progress');
-    expect(s.name).toBe('Maria');
-    expect(s.attemptId).toBe('att-1');
-    expect(s.total).toBe(4);
-    expect(s.answers).toHaveLength(0);
+    expect(s.total).toBe(LEVEL_SIZE);
   });
 
   it('trims the display name on start', () => {
-    const s = attemptReducer(createInitialAttempt(), {
-      type: 'start',
-      name: '  Maria  ',
-      attemptId: 'att-1',
-      total: 4,
-    });
+    const s = attemptReducer(createInitialAttempt(), startAction({ name: '  Maria  ' }));
     expect(s.name).toBe('Maria');
   });
 
   it('rejects an empty/whitespace name (returns state unchanged)', () => {
     const before = createInitialAttempt();
-    const s = attemptReducer(before, {
-      type: 'start',
-      name: '   ',
-      attemptId: 'att-1',
-      total: 4,
-    });
+    const s = attemptReducer(before, startAction({ name: '   ' }));
     expect(s).toBe(before);
   });
 
   it('rejects an empty attemptId', () => {
     const before = createInitialAttempt();
-    const s = attemptReducer(before, {
-      type: 'start',
-      name: 'Maria',
-      attemptId: '',
-      total: 4,
-    });
+    const s = attemptReducer(before, startAction({ attemptId: '' }));
     expect(s).toBe(before);
+  });
+
+  it('rejects an invalid levelId (out of range 1-10)', () => {
+    const before = createInitialAttempt();
+    const s = attemptReducer(before, startAction({ levelId: 0 as never }));
+    expect(s).toBe(before);
+    const s2 = attemptReducer(before, startAction({ levelId: 11 as never }));
+    expect(s2).toBe(before);
   });
 });
 
@@ -116,6 +134,7 @@ describe('attemptReducer — answer (accepted only in-progress)', () => {
   });
 
   it('transitions to completed when the last expected answer is recorded', () => {
+    // total 4: 3 answered, the 4th completes the attempt.
     let s = inProgress({
       answers: [
         { exerciseId: 'e1', given: 'a' },
@@ -155,6 +174,7 @@ describe('attemptReducer — answer (accepted only in-progress)', () => {
       state: 'completed',
       attemptId: 'att-1',
       name: 'Maria',
+      levelId: 2,
       answers: [{ exerciseId: 'e1', given: 'a' }],
       total: 1,
     };
@@ -166,6 +186,16 @@ describe('attemptReducer — answer (accepted only in-progress)', () => {
     const before = inProgress({ total: 0 });
     const s = attemptReducer(before, { type: 'answer', exerciseId: 'e1', given: 'a' });
     expect(s).toBe(before);
+  });
+
+  it('completes the attempt after the level size (10) answers', () => {
+    // Spec scenario: "Attempt completes after the level's last exercise".
+    const ids = Array.from({ length: LEVEL_SIZE }, (_, i) => `e${i + 1}`);
+    const answers = ids.slice(0, LEVEL_SIZE - 1).map((id) => ({ exerciseId: id, given: 'x' }));
+    let s = inProgress({ total: LEVEL_SIZE, answers });
+    s = attemptReducer(s, { type: 'answer', exerciseId: ids[LEVEL_SIZE - 1], given: 'x' });
+    expect(s.state).toBe('completed');
+    expect(s.answers).toHaveLength(LEVEL_SIZE);
   });
 });
 
@@ -209,6 +239,7 @@ describe('attemptReducer — complete (skip/finish blanks)', () => {
       state: 'completed',
       attemptId: 'att-1',
       name: 'Maria',
+      levelId: 2,
       answers: [{ exerciseId: 'e1', given: 'a' }],
       total: 1,
     };
@@ -221,24 +252,48 @@ describe('attemptReducer — complete (skip/finish blanks)', () => {
     const s = attemptReducer(before, { type: 'complete', exerciseIds: [] });
     expect(s).toBe(before);
   });
+
+  it('preserves the levelId across complete', () => {
+    const s = attemptReducer(
+      inProgress({ levelId: 5 }),
+      { type: 'complete', exerciseIds: ['e1'] },
+    );
+    expect(s.levelId).toBe(5);
+  });
 });
 
 describe('attemptReducer — retake', () => {
-  it('starts a fresh in-progress attempt with a new attemptId, keeping the name', () => {
+  it('starts a fresh in-progress attempt with a new attemptId, keeping name and levelId', () => {
     const completed: AttemptData = {
       state: 'completed',
       attemptId: 'A',
       name: 'Maria',
+      levelId: 2,
       answers: [{ exerciseId: 'e1', given: 'a' }],
-      total: 4,
+      total: LEVEL_SIZE,
     };
     const s = attemptReducer(completed, { type: 'retake', attemptId: 'B' });
     expect(s.state).toBe('in-progress');
     expect(s.attemptId).toBe('B');
     expect(s.attemptId).not.toBe('A');
     expect(s.name).toBe('Maria');
-    expect(s.total).toBe(4);
+    expect(s.levelId).toBe(2);
+    expect(s.total).toBe(LEVEL_SIZE);
     expect(s.answers).toHaveLength(0);
+  });
+
+  it('preserves the levelId across retake (retake targets the same level)', () => {
+    // Spec scenario: "Retake targets the same level".
+    const completed: AttemptData = {
+      state: 'completed',
+      attemptId: 'A',
+      name: 'Maria',
+      levelId: 7,
+      answers: [],
+      total: LEVEL_SIZE,
+    };
+    const s = attemptReducer(completed, { type: 'retake', attemptId: 'B' });
+    expect(s.levelId).toBe(7);
   });
 
   it('rejects an empty retake attemptId', () => {
@@ -246,8 +301,9 @@ describe('attemptReducer — retake', () => {
       state: 'completed',
       attemptId: 'A',
       name: 'Maria',
+      levelId: 2,
       answers: [],
-      total: 4,
+      total: LEVEL_SIZE,
     };
     const s = attemptReducer(completed, { type: 'retake', attemptId: '' });
     expect(s).toBe(completed);
@@ -258,11 +314,12 @@ describe('attemptReducer — retake', () => {
       state: 'completed',
       attemptId: 'A',
       name: 'Maria',
+      levelId: 2,
       answers: [
         { exerciseId: 'e1', given: 'a' },
         { exerciseId: 'e2', given: 'b' },
       ],
-      total: 4,
+      total: LEVEL_SIZE,
     };
     const s = attemptReducer(completed, { type: 'retake', attemptId: 'B' });
     expect(s.answers).toHaveLength(0);
@@ -279,18 +336,20 @@ describe('attemptReducer — retake', () => {
 });
 
 describe('attemptReducer — reset', () => {
-  it('returns to not-started with no name or answers', () => {
+  it('returns to not-started with no name, level, or answers', () => {
     const completed: AttemptData = {
       state: 'completed',
       attemptId: 'A',
       name: 'Maria',
+      levelId: 2,
       answers: [{ exerciseId: 'e1', given: 'a' }],
-      total: 4,
+      total: LEVEL_SIZE,
     };
     const s = attemptReducer(completed, { type: 'reset' });
     expect(s.state).toBe('not-started');
     expect(s.name).toBe('');
     expect(s.attemptId).toBe('');
+    expect(s.levelId).toBe(0);
     expect(s.answers).toHaveLength(0);
     expect(s.total).toBe(0);
   });

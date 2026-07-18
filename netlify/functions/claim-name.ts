@@ -11,6 +11,7 @@
  */
 
 import { claimName, getNamesStore, type StoreLike } from './_store';
+import { json, withStoreReporting } from './_http';
 import type { ClaimNameRequest, ClaimNameResponse } from '../../src/domain/types';
 
 /**
@@ -33,23 +34,13 @@ export async function handler(
   }
 
   const name = typeof body?.name === 'string' ? body.name : '';
-  try {
+  return withStoreReporting('claim-name', async () => {
     const result = await claimName(store, name);
     return json(result as ClaimNameResponse, result.ok ? 200 : 400);
-  } catch (err) {
-    console.error('[claim-name] store operation failed', err);
-    return json({ ok: false, error: 'internal' }, 500);
-  }
+  }, { ok: false, error: 'internal' });
 }
 
 /** Netlify deploy entry point — resolves the store from Netlify env. */
 export default async (request: Request): Promise<Response> => {
   return handler(getNamesStore(), request);
 };
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}

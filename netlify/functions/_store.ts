@@ -11,9 +11,14 @@
  *                    and return the reserved display name.
  *   - `leaderboard` — one blob per attempt. Key = client `attemptId` (the
  *                    idempotency key); value = `{ attemptId, name, score,
- *                    timestamp }`. Written with `onlyIfNew` so a retry on the
- *                    same `attemptId` does NOT create a duplicate row, while a
- *                    new `attemptId` (retake) creates a new row.
+ *                    level, timestamp }`. Written with `onlyIfNew` so a retry
+ *                    on the same `attemptId` does NOT create a duplicate row,
+ *                    while a new `attemptId` (retake) creates a new row.
+ *
+ * PR 3 level-aware schema: `score` is an integer 0–10 and `level` is an
+ * integer 1–10 on every row. Legacy 0–100 rows without `level` are rejected
+ * on read (`isValidEntry`) and are removed once by
+ * `scripts/reset-leaderboard.mjs` before level-aware writes begin.
  *
  * The pure ranking/tie-break lives in `src/domain/leaderboard.ts`; this module
  * only handles persistence + listing. Tests inject a `StoreLike` so handlers
@@ -26,8 +31,15 @@
  */
 
 import { getStore, type Store } from '@netlify/blobs';
-import { normalizeName, rankEntries } from '../../src/domain/leaderboard';
-import type { LeaderboardEntry } from '../../src/domain/types';
+import { normalizeName, rankEntries, type LeaderboardView } from '../../src/domain/leaderboard';
+import type { LeaderboardEntry, LevelId } from '../../src/domain/types';
+import {
+  classifyForReset,
+  isValidLevelValue,
+  isValidScoreValue,
+} from './leaderboard-classifier.mjs';
+
+export { classifyForReset } from './leaderboard-classifier.mjs';
 
 /** Names store name (Netlify Blobs store identifier). */
 export const NAMES_STORE = 'names';
@@ -179,20 +191,28 @@ export async function claimName(
  *
  * Returns `{ ok: true }` whether the write was new (`modified: true`) or a
  * no-op retry (`modified: false`). Rejects invalid payloads defensively
- * (empty name, non-finite score, empty attemptId).
+ * (empty name, non-integer / out-of-range `score`, non-integer / out-of-range
+ * `level`, empty `attemptId`).
+ *
+ * PR 3 level-aware schema (netlify-deployment spec): `score` MUST be an
+ * integer in 0–10 and `level` MUST be an integer in 1–10. Non-integer
+ * (`9.5`, `3.2`) and out-of-range values are rejected. Legacy-shaped rows
+ * (no `level`, 0–100 score) are no longer produced; legacy rows written
+ * before PR3 MUST be removed by `scripts/reset-leaderboard.mjs`.
  */
 export async function submitScore(
   store: StoreLike,
-  payload: { name: string; score: number; attemptId: string },
-): Promise<{ ok: true } | { ok: false; reason: 'invalid' }> {
+  payload: { name: string; score: number; level?: number; attemptId: string },
+): Promise<{ ok: true } | { ok: false, reason: 'invalid' }> {
   const name = (payload.name ?? '').trim();
   const score = Number(payload.score);
   const attemptId = (payload.attemptId ?? '').trim();
+  const level = payload.level;
+  const levelId = isValidLevelValue(level) ? (level as LevelId) : null;
   if (
     name.length === 0 ||
-    !Number.isFinite(score) ||
-    score < 0 ||
-    score > 100 ||
+    !isValidScoreValue(score) ||
+    levelId === null ||
     attemptId.length === 0
   ) {
     return { ok: false, reason: 'invalid' };
@@ -202,6 +222,7 @@ export async function submitScore(
     attemptId,
     name,
     score,
+    level: levelId,
     timestamp: Date.now(),
   };
   // Idempotent: same attemptId retry returns success without a second row.
@@ -210,34 +231,89 @@ export async function submitScore(
 }
 
 /**
- * List every leaderboard entry and rank it (shared-leaderboard spec: score desc
- * → timestamp asc → normalized name asc → attemptId asc). Returns the bare
- * ranked `LeaderboardEntry[]` per the design API contract. Malformed blobs are
- * skipped defensively so one bad entry never blanks the whole board.
+ * Max concurrent `getJSON` calls when hydrating the leaderboard. Keeps normal
+ * loads from scaling as sequential round-trips without unbounded fan-out.
+ * Exported for tests that assert concurrent fetch behavior.
+ */
+export const LEADERBOARD_READ_CONCURRENCY = 16;
+
+/**
+ * Run `fn` over `items` with at most `concurrency` in-flight promises.
+ * Preserves input order in the result array. Empty input returns `[]`.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
+/**
+ * List every leaderboard entry and rank it (shared-leaderboard spec). Returns
+ * the bare ranked `LeaderboardEntry[]` per the design API contract. Malformed
+ * blobs are skipped defensively so one bad entry never blanks the board.
+ *
+ * PR 3 level-aware schema: `level` is now REQUIRED on every persisted row.
+ * Legacy rows missing `level` are treated as invalid (`isValidEntry` returns
+ * false) and are hidden from reads — they MUST be removed by the deploy-time
+ * `scripts/reset-leaderboard.mjs`. A valid row MUST have integer `level` 1–10
+ * and integer `score` 0–10.
+ *
+ * `level` filter (optional): when provided, only rows whose `level` matches
+ * are returned, ranked by the per-level view (score desc then ties). Omitting
+ * it returns the global view (level desc → score desc → ties).
+ *
+ * Reads blob values with bounded concurrency (`LEADERBOARD_READ_CONCURRENCY`)
+ * so leaderboard loads do not wait on sequential N+1 round-trips.
  */
 export async function getRankedLeaderboard(
   store: StoreLike,
+  level?: LevelId,
 ): Promise<LeaderboardEntry[]> {
   const keys = await store.listKeys();
+  const raws = await mapWithConcurrency(
+    keys,
+    LEADERBOARD_READ_CONCURRENCY,
+    (key) => store.getJSON(key),
+  );
   const entries: LeaderboardEntry[] = [];
-  for (const key of keys) {
-    const raw = (await store.getJSON(key)) as Partial<LeaderboardEntry> | null;
+  for (const raw of raws) {
     if (!raw) continue;
+    // Validate unknown blob shapes; never trust raw storage as LeaderboardEntry.
     if (!isValidEntry(raw)) continue;
-    entries.push(raw as LeaderboardEntry);
+    const entry = raw as LeaderboardEntry;
+    if (level !== undefined && entry.level !== level) continue;
+    entries.push(entry);
   }
-  return rankEntries(entries);
+  const view: LeaderboardView = level !== undefined ? 'per-level' : 'global';
+  return rankEntries(entries, view);
 }
 
-/** Runtime shape check for a leaderboard entry read from a blob. */
-function isValidEntry(raw: Partial<LeaderboardEntry>): boolean {
-  return (
-    typeof raw.attemptId === 'string' &&
-    raw.attemptId.length > 0 &&
-    typeof raw.name === 'string' &&
-    typeof raw.score === 'number' &&
-    Number.isFinite(raw.score) &&
-    typeof raw.timestamp === 'number' &&
-    Number.isFinite(raw.timestamp)
-  );
+/**
+ * Runtime shape check for a leaderboard entry read from a blob.
+ *
+ * PR 3 level-aware schema: `level` is REQUIRED. A row is valid ONLY when it
+ * has integer `level` 1–10 AND integer `score` 0–10 (plus the existing
+ * `attemptId`, `name`, `timestamp` checks). Legacy rows without `level` or
+ * with a 0–100 score are invalid and hidden from reads — they are cleaned up
+ * once by `scripts/reset-leaderboard.mjs` and MUST NOT be displayed.
+ */
+function isValidEntry(raw: unknown): boolean {
+  return classifyForReset(raw).valid;
 }

@@ -352,7 +352,7 @@ body {
 
 .leaderboard__row {
   display: grid;
-  grid-template-columns: 2.5rem 1fr auto;
+  grid-template-columns: 2.5rem 1fr 3rem auto;
   align-items: center;
   gap: 0.75rem;
   padding: 0.55rem 0.8rem;
@@ -375,9 +375,36 @@ body {
   font-weight: 600;
 }
 
+.leaderboard__level {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  text-align: center;
+}
+
 .leaderboard__score {
   font-weight: 800;
   font-size: 1.1rem;
+}
+
+.leaderboard__filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.leaderboard__filter-label {
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.leaderboard__filter-select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.95rem;
 }
 
 .leaderboard__footer {

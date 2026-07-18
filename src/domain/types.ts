@@ -31,6 +31,13 @@ export type Topic =
   | 'like-dislike';
 
 /**
+ * A level identifier in the 1–10 partition (level-progression + exercise-bank
+ * specs). `difficulty === levelId`: an exercise whose `difficulty` is `N`
+ * belongs to Level `N`. Level 1 is easiest; Level 10 is hardest.
+ */
+export type LevelId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+/**
  * A single exercise record in the fixed 100-exercise catalog.
  *
  * - `id` MUST be unique across the catalog.
@@ -38,12 +45,27 @@ export type Topic =
  * - `prompt` MUST be non-empty.
  * - `acceptedAnswers` MUST be a non-empty list. Alternate answers (contractions,
  *   synonyms) keep grading fair.
+ * - `difficulty` MUST be an integer in 1–10 and IS the exercise's level id
+ *   (design.md: `difficulty === levelId`). The 100-record catalog MUST partition
+ *   into exactly 10 levels of 10 by `difficulty`.
  */
 export interface Exercise {
   id: string;
   topic: Topic;
   prompt: string;
   acceptedAnswers: string[];
+  difficulty: number;
+}
+
+/**
+ * One of the 10 levels built from the catalog by grouping exercises on
+ * `difficulty` (level-progression spec). `exercises` is the ordered, frozen
+ * bucket for that level id.
+ */
+export interface Level {
+  id: LevelId;
+  label: string;
+  exercises: readonly Exercise[];
 }
 
 /**
@@ -67,10 +89,12 @@ export interface Answer {
 }
 
 /**
- * The result of a completed attempt. `score` is on a 0–100 scale (correct
- * answers out of 100). `mistakes` lists every incorrect answer with topic and
- * given value. `recommendations` is the ordered list of recommended topics
- * (miss rate >= 40%, top 3).
+ * The result of a completed attempt. `score` is on a 0–10 scale (correct
+ * answers out of the selected level's 10 exercises — scoring-feedback spec).
+ * The score scale is moving from the legacy 0–100 (full 100-exercise catalog)
+ * to 0–10 (one level at a time); see design.md "Score scale". `mistakes` lists
+ * every incorrect answer with topic and given value. `recommendations` is the
+ * ordered list of recommended topics (miss rate >= 40%, top 3).
  */
 export interface AttemptResult {
   score: number;
@@ -82,11 +106,19 @@ export interface AttemptResult {
  * A leaderboard entry persisted in Netlify Blobs and read across devices
  * (shared-leaderboard spec). The blob key is the client-generated `attemptId`,
  * which acts as the idempotency key for the write.
+ *
+ * PR3 level-aware schema: every public entry MUST include `level` (LevelId
+ * 1–10) and `score` on the 0–10 scale. The global leaderboard ranks `level`
+ * desc first so harder-level attempts rank above easier ones. Legacy 0–100
+ * rows without `level` are not part of this public contract — they are
+ * rejected on read and removed by `scripts/reset-leaderboard.mjs`.
  */
 export interface LeaderboardEntry {
   attemptId: string;
   name: string;
   score: number;
+  /** Level the attempt was scoped to (1–10). Required on every public row. */
+  level: LevelId;
   timestamp: number;
 }
 
@@ -107,6 +139,8 @@ export interface ClaimNameResponse {
 export interface SubmitScoreRequest {
   name: string;
   score: number;
+  /** Level the attempt was scoped to (1–10). Required for level-aware scoring. */
+  level: LevelId;
   attemptId: string;
 }
 

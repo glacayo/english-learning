@@ -13,10 +13,11 @@ describe('resolveAttemptName', () => {
     expect(resolveAttemptName('maria', claim)).toEqual({
       ok: true,
       name: 'Maria',
+      nameClaimKey: 'maria',
     });
   });
 
-  it('uses the trimmed typed name when the claim API is unavailable', () => {
+  it('uses the trimmed typed name and derived claim key when the claim API is unavailable', () => {
     const claim: ApiResult<ClaimNameResponse> = {
       ok: false,
       reason: 'unavailable',
@@ -25,6 +26,7 @@ describe('resolveAttemptName', () => {
     expect(resolveAttemptName('  Maria  ', claim)).toEqual({
       ok: true,
       name: 'Maria',
+      nameClaimKey: 'maria',
       notice: 'No se pudo conectar con el servidor. Mostrando resultados locales.',
     });
   });
@@ -48,6 +50,18 @@ describe('resolveAttemptName', () => {
     expect(resolveAttemptName('Maria', claim)).toEqual({
       ok: true,
       name: 'Maria',
+      nameClaimKey: 'maria',
     });
+  });
+
+  it('nameClaimKey is the normalized (trim + case-fold) identity', () => {
+    const claim: ApiResult<ClaimNameResponse> = {
+      ok: true,
+      value: { ok: true, name: '  Ana  ' },
+    };
+    const resolved = resolveAttemptName('ANA', claim);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.nameClaimKey).toBe('ana');
   });
 });

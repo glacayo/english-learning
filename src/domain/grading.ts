@@ -51,20 +51,28 @@ function isResponseMap(
 }
 
 /**
- * Grade a full attempt against the exercise catalog.
+ * Grade a full attempt against the exercises of a single level
+ * (scoring-feedback spec).
  *
  * Every exercise in `exercises` is graded. A response for an exercise id that
  * is not in `exercises` is ignored. An exercise with no matching response is
- * treated as unanswered and graded incorrect (spec: score is correct answers
- * out of 100).
+ * treated as unanswered and graded incorrect (spec: a skipped question counts
+ * as incorrect).
  *
  * The returned `AttemptResult` contains:
- *   - `score`: correct answers out of 100 (0–100 integer).
+ *   - `score`: the raw count of correct answers (0..N, where N is the number of
+ *     graded exercises). For a level attempt N=10, so `score` is on a 0–10
+ *     scale (design.md "Score scale": `gradeAttempt.score = correctCount`,
+ *     no `*10`/`/10` rescaling). Passing is `score >= 9` (PASS_THRESHOLD).
  *   - `mistakes`: every incorrect `Answer` (wrong or unanswered), in catalog
  *     order, each with `exerciseId`, `topic`, `given` (empty string when
  *     unanswered), and `correct: false`.
-  *   - `recommendations`: derived via `recommendTopics(answers)` — top 3 topics
-  *     with miss rate >= 40% (computed from all answers, not only mistakes).
+ *   - `recommendations`: derived via `recommendTopics(answers)` — top 3 topics
+ *     with miss rate >= 40% AND at least 2 questions in the attempt (level-
+ *     scoped recommendation rule, scoring-feedback spec).
+ *
+ * When `exercises` is empty the score is 0 (defensive: a real level always has
+ * 10 exercises; the catalog validator enforces this).
  *
  * Pure function: no I/O, no mutation of inputs.
  */
@@ -96,8 +104,9 @@ export function gradeAttempt(
     });
   }
 
-  const total = exercises.length;
-  const score = total === 0 ? 0 : Math.round((correctCount / total) * 100);
+  // Score scale: raw correct count (0..N). For a 10-exercise level this is 0–10.
+  // Previously (PR0) this was Math.round((correctCount / total) * 100).
+  const score = correctCount;
   const mistakes = answers.filter((a) => !a.correct);
   const recommendations: Topic[] = recommendTopics(answers);
 

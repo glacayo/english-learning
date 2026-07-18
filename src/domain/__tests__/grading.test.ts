@@ -7,6 +7,7 @@ const exercise: Exercise = {
   topic: 'present-simple',
   prompt: 'I ___ soccer every day.',
   acceptedAnswers: ['play', 'plays'],
+  difficulty: 1,
 };
 
 const multiAnswerExercise: Exercise = {
@@ -14,6 +15,7 @@ const multiAnswerExercise: Exercise = {
   topic: 'present-simple',
   prompt: 'I am happy. (full or contracted)',
   acceptedAnswers: ['I am', "I'm"],
+  difficulty: 1,
 };
 
 describe('normalizeAnswer', () => {
@@ -60,21 +62,22 @@ describe('gradeAnswer', () => {
 describe('gradeAttempt', () => {
   function buildExercises(): Exercise[] {
     return [
-      { id: 'e1', topic: 'present-simple', prompt: 'q1', acceptedAnswers: ['play'] },
-      { id: 'e2', topic: 'simple-past', prompt: 'q2', acceptedAnswers: ['played'] },
-      { id: 'e3', topic: 'present-simple', prompt: 'q3', acceptedAnswers: ['goes'] },
-      { id: 'e4', topic: 'simple-past', prompt: 'q4', acceptedAnswers: ['went'] },
+      { id: 'e1', topic: 'present-simple', prompt: 'q1', acceptedAnswers: ['play'], difficulty: 1 },
+      { id: 'e2', topic: 'simple-past', prompt: 'q2', acceptedAnswers: ['played'], difficulty: 1 },
+      { id: 'e3', topic: 'present-simple', prompt: 'q3', acceptedAnswers: ['goes'], difficulty: 1 },
+      { id: 'e4', topic: 'simple-past', prompt: 'q4', acceptedAnswers: ['went'], difficulty: 1 },
     ];
   }
 
-  it('scores 100 when all answers are correct', () => {
+  it('scores the raw correct count when all answers are correct (0-N scale)', () => {
     const result = gradeAttempt(buildExercises(), [
       { exerciseId: 'e1', given: 'play' },
       { exerciseId: 'e2', given: 'played' },
       { exerciseId: 'e3', given: 'goes' },
       { exerciseId: 'e4', given: 'went' },
     ]);
-    expect(result.score).toBe(100);
+    // 0-10 scale: raw correct count. 4/4 correct → score 4 (not 100).
+    expect(result.score).toBe(4);
     expect(result.mistakes).toHaveLength(0);
   });
 
@@ -89,27 +92,31 @@ describe('gradeAttempt', () => {
     expect(result.mistakes).toHaveLength(4);
   });
 
-  it('computes score as correct out of 100 across the full 100-exercise scale', () => {
-    const exercises: Exercise[] = Array.from({ length: 100 }, (_, i) => ({
+  it('score reflects the raw correct count (0-N scale), not a percentage', () => {
+    // Spec scenario: "Level score reflects the 10-question scale".
+    const exercises: Exercise[] = Array.from({ length: 10 }, (_, i) => ({
       id: `e${i}`,
       topic: 'present-simple' as const,
       prompt: `q${i}`,
       acceptedAnswers: [`a${i}`],
+      difficulty: 1,
     }));
-    const responses = exercises.slice(0, 75).map((e) => ({
+    // 9 correct out of 10 → score 9 on a 0-10 scale.
+    const responses = exercises.slice(0, 9).map((e) => ({
       exerciseId: e.id,
       given: e.acceptedAnswers[0],
     }));
     const result = gradeAttempt(exercises, responses);
-    expect(result.score).toBe(75);
-    expect(result.mistakes).toHaveLength(25);
+    expect(result.score).toBe(9);
+    expect(result.mistakes).toHaveLength(1);
   });
 
   it('treats unanswered exercises as incorrect (empty given)', () => {
     const result = gradeAttempt(buildExercises(), [
       { exerciseId: 'e1', given: 'play' },
     ]);
-    expect(result.score).toBe(25);
+    // 1 of 4 correct → raw count 1 (previously 25 on a 0-100 scale).
+    expect(result.score).toBe(1);
     expect(result.mistakes).toHaveLength(3);
     expect(result.mistakes.every((m) => m.correct === false)).toBe(true);
   });
@@ -122,7 +129,8 @@ describe('gradeAttempt', () => {
       { exerciseId: 'e4', given: 'went' },
       { exerciseId: 'unknown', given: 'whatever' },
     ]);
-    expect(result.score).toBe(100);
+    // 4/4 correct → score 4 (raw count).
+    expect(result.score).toBe(4);
   });
 
   it('accepts a Map of responses', () => {
@@ -133,7 +141,8 @@ describe('gradeAttempt', () => {
       ['e4', 'went'],
     ]);
     const result = gradeAttempt(buildExercises(), map);
-    expect(result.score).toBe(100);
+    // 4/4 correct → score 4 (raw count).
+    expect(result.score).toBe(4);
   });
 
   it('preserves catalog order in mistakes', () => {

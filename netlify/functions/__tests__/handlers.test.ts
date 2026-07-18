@@ -76,7 +76,7 @@ describe('claim-name handler', () => {
     expect(res.status).toBe(405);
   });
 
-  it('returns 500 and logs when store operation throws', async () => {
+  it('returns 500 and logs structured report when store operation throws', async () => {
     const err = new Error('blobs down');
     const store: StoreLike = {
       async getJSON() {
@@ -93,33 +93,59 @@ describe('claim-name handler', () => {
     const res = await claimNameHandler(store, jsonReq({ name: 'Maria' }));
     expect(res.status).toBe(500);
     expect(await body(res)).toEqual({ ok: false, error: 'internal' });
-    expect(spy).toHaveBeenCalledWith('[claim-name] store operation failed', err);
+    // reportError logs a structured JSON line (not the old free-form string).
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = spy.mock.calls[0][0] as string;
+    const parsed = JSON.parse(logged) as { functionName: string; message: string; errorType?: string };
+    expect(parsed.functionName).toBe('claim-name');
+    expect(parsed.message).toBe('store operation failed');
+    expect(parsed.errorType).toBe('Error');
     spy.mockRestore();
   });
 });
 
-describe('submit-score handler', () => {
-  it('writes an entry and returns ok:true on valid payload', async () => {
+describe('submit-score handler — PR3 level-aware schema', () => {
+  it('writes a level-aware entry and returns ok:true on valid payload', async () => {
     const store = makeStore();
-    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 90, attemptId: 'att-1' }));
+    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9, level: 1, attemptId: 'att-1' }));
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ ok: true });
     expect(store.data.has('att-1')).toBe(true);
+    expect((store.data.get('att-1') as { level?: number }).level).toBe(1);
   });
 
   it('is idempotent: retry same attemptId returns ok:true without a duplicate row', async () => {
     const store = makeStore();
-    await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 90, attemptId: 'att-1' }));
+    await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9, level: 1, attemptId: 'att-1' }));
     const sizeBefore = store.data.size;
-    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 90, attemptId: 'att-1' }));
+    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9, level: 1, attemptId: 'att-1' }));
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ ok: true });
     expect(store.data.size).toBe(sizeBefore);
   });
 
+  it('rejects missing level with 400', async () => {
+    const store = makeStore();
+    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9, attemptId: 'a' }));
+    expect(res.status).toBe(400);
+    expect(await body(res)).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('rejects non-integer score (9.5) with 400', async () => {
+    const store = makeStore();
+    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9.5, level: 1, attemptId: 'a' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects out-of-range level (0) with 400', async () => {
+    const store = makeStore();
+    const res = await submitScoreHandler(store, jsonReq({ name: 'Maria', score: 9, level: 0, attemptId: 'a' }));
+    expect(res.status).toBe(400);
+  });
+
   it('rejects invalid payload with 400', async () => {
     const store = makeStore();
-    const res = await submitScoreHandler(store, jsonReq({ name: '', score: 90, attemptId: 'a' }));
+    const res = await submitScoreHandler(store, jsonReq({ name: '', score: 9, level: 1, attemptId: 'a' }));
     expect(res.status).toBe(400);
     expect(await body(res)).toEqual({ ok: false, reason: 'invalid' });
   });
@@ -130,7 +156,7 @@ describe('submit-score handler', () => {
     expect(res.status).toBe(405);
   });
 
-  it('returns 500 and logs when store operation throws', async () => {
+  it('returns 500 and logs structured report when store operation throws', async () => {
     const err = new Error('blobs down');
     const store: StoreLike = {
       async getJSON() {
@@ -146,25 +172,30 @@ describe('submit-score handler', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await submitScoreHandler(
       store,
-      jsonReq({ name: 'Maria', score: 90, attemptId: 'att-1' }),
+      jsonReq({ name: 'Maria', score: 9, level: 1, attemptId: 'att-1' }),
     );
     expect(res.status).toBe(500);
     expect(await body(res)).toEqual({ ok: false, error: 'internal' });
-    expect(spy).toHaveBeenCalledWith('[submit-score] store operation failed', err);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = spy.mock.calls[0][0] as string;
+    const parsed = JSON.parse(logged) as { functionName: string; message: string };
+    expect(parsed.functionName).toBe('submit-score');
+    expect(parsed.message).toBe('store operation failed');
     spy.mockRestore();
   });
 });
 
-describe('get-leaderboard handler', () => {
-  it('returns bare ranked LeaderboardEntry[] on GET', async () => {
+describe('get-leaderboard handler — global + ?level filter', () => {
+  it('returns bare ranked LeaderboardEntry[] on GET (global view, level-aware rank)', async () => {
     const store = makeStore({
-      'att-1': { attemptId: 'att-1', name: 'Maria', score: 70, timestamp: 10_000 },
-      'att-2': { attemptId: 'att-2', name: 'Marco', score: 90, timestamp: 20_000 },
+      'att-1': { attemptId: 'att-1', name: 'Maria', score: 10, level: 1, timestamp: 10_000 },
+      'att-2': { attemptId: 'att-2', name: 'Marco', score: 7, level: 10, timestamp: 20_000 },
     });
     const res = await getLeaderboardHandler(store, new Request('https://x.test', { method: 'GET' }));
     expect(res.status).toBe(200);
     const entries = await body<{ attemptId: string; score: number }[]>(res);
     expect(Array.isArray(entries)).toBe(true);
+    // Level 10 (score 7) ranks above Level 1 (score 10) in the global view.
     expect(entries.map((e) => e.attemptId)).toEqual(['att-2', 'att-1']);
   });
 
@@ -175,13 +206,48 @@ describe('get-leaderboard handler', () => {
     expect(await body(res)).toEqual([]);
   });
 
+  it('filters by ?level=N and ranks by score desc (per-level view)', async () => {
+    const store = makeStore({
+      'l1-a': { attemptId: 'l1-a', name: 'Ana', score: 9, level: 1, timestamp: 10 },
+      'l2-a': { attemptId: 'l2-a', name: 'Bob', score: 5, level: 2, timestamp: 10 },
+      'l2-b': { attemptId: 'l2-b', name: 'Cat', score: 9, level: 2, timestamp: 20 },
+    });
+    const res = await getLeaderboardHandler(store, new Request('https://x.test/?level=2', { method: 'GET' }));
+    expect(res.status).toBe(200);
+    const entries = await body<{ attemptId: string }[]>(res);
+    expect(entries.map((e) => e.attemptId)).toEqual(['l2-b', 'l2-a']);
+  });
+
+  it('rejects non-integer ?level=3.2 with 400', async () => {
+    const store = makeStore();
+    const res = await getLeaderboardHandler(store, new Request('https://x.test/?level=3.2', { method: 'GET' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects out-of-range ?level=0 with 400', async () => {
+    const store = makeStore();
+    const res = await getLeaderboardHandler(store, new Request('https://x.test/?level=0', { method: 'GET' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('hides legacy rows without level in the global view', async () => {
+    const store = makeStore({
+      'legacy': { attemptId: 'legacy', name: 'Old', score: 85, timestamp: 10_000 },
+      'att-2': { attemptId: 'att-2', name: 'Marco', score: 9, level: 1, timestamp: 20_000 },
+    });
+    const res = await getLeaderboardHandler(store, new Request('https://x.test', { method: 'GET' }));
+    expect(res.status).toBe(200);
+    const entries = await body<{ attemptId: string }[]>(res);
+    expect(entries.map((e) => e.attemptId)).toEqual(['att-2']);
+  });
+
   it('rejects non-GET with 405', async () => {
     const store = makeStore();
     const res = await getLeaderboardHandler(store, new Request('https://x.test', { method: 'POST' }));
     expect(res.status).toBe(405);
   });
 
-  it('returns 500 and logs when store operation throws', async () => {
+  it('returns 500 and logs structured report when store operation throws', async () => {
     const err = new Error('blobs down');
     const store: StoreLike = {
       async getJSON() {
@@ -201,7 +267,11 @@ describe('get-leaderboard handler', () => {
     );
     expect(res.status).toBe(500);
     expect(await body(res)).toEqual({ error: 'internal' });
-    expect(spy).toHaveBeenCalledWith('[get-leaderboard] store operation failed', err);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = spy.mock.calls[0][0] as string;
+    const parsed = JSON.parse(logged) as { functionName: string; message: string };
+    expect(parsed.functionName).toBe('get-leaderboard');
+    expect(parsed.message).toBe('store operation failed');
     spy.mockRestore();
   });
 });

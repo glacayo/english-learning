@@ -11,15 +11,18 @@ import { TOPIC_LABELS } from '../content/topics';
  *   - Show one exercise prompt at a time with a text input for the answer.
  *   - Record each answer via `onAnswer(exerciseId, given)`; the parent reducer
  *     enforces in-progress-only acceptance and auto-completion on the last
- *     answer.
- *   - Show progress (question N of total) and allow going back to fix a
- *     previous answer without leaving the in-progress state.
+ *     answer (the level's 10th).
+ *   - Show progress ("Question N of 10" when `exercises` is a level's 10
+ *     exercises) and allow going back to fix a previous answer without leaving
+ *     the in-progress state.
  *   - Sync the local draft input when the visible exercise (or its stored
  *     answer) changes so typed text does not leak across questions, while
  *     still restoring persisted answers on back-navigation.
  *
  * This component is presentational: it does not grade or persist. Grading is
- * pure (`gradeAttempt`) and runs in the parent after completion.
+ * pure (`gradeAttempt`) and runs in the parent after completion. The parent
+ * passes the selected level's 10 exercises so the progress label reads
+ * "Question N of 10" (prop-driven).
  */
 export interface ExerciseRunnerProps {
   exercises: readonly Exercise[];

@@ -12,6 +12,19 @@ export const RECOMMENDATION_THRESHOLD = 0.4;
  */
 export const MAX_RECOMMENDATIONS = 3;
 
+/**
+ * Minimum number of questions a topic must have within a single level attempt
+ * to be eligible for recommendation (scoring-feedback spec: "the topic has at
+ * least 2 questions in the level attempt"). A topic with only one question in
+ * the attempt MUST NOT be recommended even if that single question was missed.
+ *
+ * This rule is level-scoped: the attempt only contains the 10 exercises of the
+ * selected level, so the sample size is the count within those 10 — not the
+ * full 100-exercise catalog. The rule avoids noisy 1/1 (100%) recommendations
+ * on mixed 10-question levels (design.md "Recommendations").
+ */
+export const MIN_RECOMMENDATION_SAMPLE = 2;
+
 export interface TopicStats {
   topic: Topic;
   total: number;
@@ -49,8 +62,16 @@ export function computeTopicStats(answers: readonly Answer[]): TopicStats[] {
 }
 
 /**
- * Recommend up to 3 topics with a miss rate >= 40%, ordered from highest miss
- * rate to lowest (scoring-feedback spec).
+ * Recommend up to 3 topics that satisfy BOTH (scoring-feedback spec):
+ *   1. the topic has at least `MIN_RECOMMENDATION_SAMPLE` (2) questions in the
+ *      attempt (minimum sample size), AND
+ *   2. the topic miss rate is `RECOMMENDATION_THRESHOLD` (40%) or higher,
+ * ordered from highest miss rate to lowest.
+ *
+ * This is level-scoped: `answers` is the graded answer set for one 10-question
+ * level attempt, so a topic with only one question in the attempt MUST NOT be
+ * recommended even if that single question was missed (spec scenario
+ * "Single-question miss is not recommended (insufficient sample)").
  *
  * Tie-break between topics with identical miss rates is by topic name ascending
  * so the result is deterministic regardless of object key order.
@@ -60,7 +81,11 @@ export function computeTopicStats(answers: readonly Answer[]): TopicStats[] {
 export function recommendTopics(answers: readonly Answer[]): Topic[] {
   const stats = computeTopicStats(answers);
   return stats
-    .filter((s) => s.total > 0 && s.missRate >= RECOMMENDATION_THRESHOLD)
+    .filter(
+      (s) =>
+        s.total >= MIN_RECOMMENDATION_SAMPLE &&
+        s.missRate >= RECOMMENDATION_THRESHOLD,
+    )
     .sort((a, b) => {
       if (b.missRate !== a.missRate) return b.missRate - a.missRate;
       return a.topic < b.topic ? -1 : a.topic > b.topic ? 1 : 0;

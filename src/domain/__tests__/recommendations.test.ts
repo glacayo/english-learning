@@ -3,6 +3,7 @@ import type { Answer, Topic } from '../types';
 import {
   computeTopicStats,
   MAX_RECOMMENDATIONS,
+  MIN_RECOMMENDATION_SAMPLE,
   RECOMMENDATION_THRESHOLD,
   recommendTopics,
 } from '../recommendations';
@@ -118,5 +119,57 @@ describe('recommendTopics', () => {
   it('exposes the 40% threshold and max-3 cap as constants', () => {
     expect(RECOMMENDATION_THRESHOLD).toBe(0.4);
     expect(MAX_RECOMMENDATIONS).toBe(3);
+  });
+
+  it('exposes the minimum sample size (2) as a constant', () => {
+    expect(MIN_RECOMMENDATION_SAMPLE).toBe(2);
+  });
+
+  // ---- Level-scoped minimum sample (scoring-feedback spec) ----------------
+
+  it('recommends a topic with 2 questions where 1 is missed (50% miss rate)', () => {
+    // Spec scenario: "One of two missed meets threshold and is recommended".
+    const list = [...answers('simple-past', 2, 1)]; // 2 questions, 1 missed = 50%
+    expect(recommendTopics(list)).toContain('simple-past');
+  });
+
+  it('does NOT recommend a single-question topic even when missed (100%)', () => {
+    // Spec scenario: "Single-question miss is not recommended (insufficient sample)".
+    const list = [...answers('present-progressive', 1, 1)]; // 1 question, 1 missed = 100%
+    expect(recommendTopics(list)).not.toContain('present-progressive');
+    expect(recommendTopics(list)).toEqual([]);
+  });
+
+  it('does NOT recommend a single-question topic that is correct (0% but sample too small)', () => {
+    const list = [...answers('simple-past', 1, 0)];
+    expect(recommendTopics(list)).toEqual([]);
+  });
+
+  it('excludes a topic with exactly 2 questions and miss rate below 40%', () => {
+    // Spec scenario: "Low miss-rate topic excluded" — 2 questions, 20% miss.
+    const list = [...answers('present-simple', 2, 0)]; // 2 questions, 0 missed = 0%
+    expect(recommendTopics(list)).not.toContain('present-simple');
+    expect(recommendTopics(list)).toEqual([]);
+  });
+
+  it('caps recommendations at three even when 5 topics meet the sample + rate', () => {
+    // Spec scenario: "Recommendations capped at three".
+    const list: Answer[] = [];
+    const fiveTopics = TOPICS.slice(0, 5);
+    for (const topic of fiveTopics) {
+      list.push(...answers(topic, 2, 2)); // 2 questions each, both missed = 100%
+    }
+    const recs = recommendTopics(list);
+    expect(recs).toHaveLength(MAX_RECOMMENDATIONS);
+  });
+
+  it('keeps the sample threshold level-scoped (not the full catalog)', () => {
+    // A level attempt has only 10 exercises; a topic with 2 of those 10 and a
+    // 50% miss rate qualifies. A topic with 1 of those 10 and 100% does not.
+    const list = [
+      ...answers('simple-past', 2, 1), // 50% — qualifies
+      ...answers('present-progressive', 1, 1), // 100% but sample 1 — excluded
+    ];
+    expect(recommendTopics(list)).toEqual(['simple-past']);
   });
 });

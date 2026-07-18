@@ -3,7 +3,10 @@ import type { Exercise, Topic } from '../types';
 import {
   assertValidCatalog,
   EXPECTED_CATALOG_SIZE,
+  EXPECTED_LEVEL_SIZE,
+  MAX_DIFFICULTY,
   MAX_PER_TOPIC,
+  MIN_DIFFICULTY,
   MIN_PER_TOPIC,
   validateCatalog,
 } from '../catalog';
@@ -28,6 +31,11 @@ function validCatalog(): Exercise[] {
     'daily-routine': 12,
     'like-dislike': 12,
   };
+  // Assign difficulties 1..10 in catalog order, 10 per bucket, so the level
+  // partition rule (exactly 10 per difficulty 1-10) passes alongside the
+  // topic-distribution rule.
+  let difficultyBucket = 1;
+  let placedInBucket = 0;
   for (const topic of TOPICS) {
     for (let i = 0; i < counts[topic]; i++) {
       n += 1;
@@ -36,7 +44,13 @@ function validCatalog(): Exercise[] {
         topic,
         prompt: `Prompt ${n}`,
         acceptedAnswers: [`answer-${n}`],
+        difficulty: difficultyBucket,
       });
+      placedInBucket += 1;
+      if (placedInBucket === 10) {
+        difficultyBucket += 1;
+        placedInBucket = 0;
+      }
     }
   }
   return exercises;
@@ -124,5 +138,82 @@ describe('validateCatalog', () => {
 
   it('assertValidCatalog does not throw on a valid catalog', () => {
     expect(() => assertValidCatalog(validCatalog())).not.toThrow();
+  });
+
+  it('reports per-difficulty counts for a valid catalog (exactly 10 per bucket 1-10)', () => {
+    const result = validateCatalog(validCatalog());
+    expect(result.valid).toBe(true);
+    for (let d = MIN_DIFFICULTY; d <= MAX_DIFFICULTY; d += 1) {
+      expect(result.difficultyCounts[d]).toBe(EXPECTED_LEVEL_SIZE);
+    }
+  });
+
+  it('rejects a missing difficulty (difficulty-missing)', () => {
+    const catalog = validCatalog();
+    const { difficulty, ...rest } = catalog[0];
+    catalog[0] = rest as Exercise;
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === 'difficulty-missing')).toBe(true);
+  });
+
+  it('rejects an out-of-range difficulty (difficulty-out-of-range)', () => {
+    const catalog = validCatalog();
+    catalog[0] = { ...catalog[0], difficulty: 11 };
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === 'difficulty-out-of-range')).toBe(true);
+  });
+
+  it('rejects a non-integer difficulty (difficulty-out-of-range)', () => {
+    const catalog = validCatalog();
+    catalog[0] = { ...catalog[0], difficulty: 1.5 };
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === 'difficulty-out-of-range')).toBe(true);
+  });
+
+  it('rejects a difficulty below 1 (difficulty-out-of-range)', () => {
+    const catalog = validCatalog();
+    catalog[0] = { ...catalog[0], difficulty: 0 };
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === 'difficulty-out-of-range')).toBe(true);
+  });
+
+  it('rejects an unbalanced level partition (level-partition)', () => {
+    const catalog = validCatalog();
+    // Move one exercise from difficulty 1 to difficulty 2 so bucket 1 has 9
+    // and bucket 2 has 11. Find the first difficulty-1 exercise and bump it.
+    const idx = catalog.findIndex((e) => e.difficulty === 1);
+    catalog[idx] = { ...catalog[idx], difficulty: 2 };
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    const partitionIssues = result.issues.filter(
+      (i) => i.code === 'level-partition',
+    );
+    expect(partitionIssues.length).toBeGreaterThanOrEqual(1);
+    // Both the under-filled (1) and over-filled (2) buckets should be flagged.
+    const flaggedDifficulties = partitionIssues.map((i) => i.difficulty);
+    expect(flaggedDifficulties).toContain(1);
+    expect(flaggedDifficulties).toContain(2);
+  });
+
+  it('keeps the flat 100/topic rules independent of the level partition', () => {
+    // A catalog with a perfect 10-per-bucket partition but a bad topic
+    // distribution must still fail on `distribution` (independent rules).
+    const catalog = validCatalog();
+    // Move two exercises from the first topic into another topic, keeping
+    // their difficulty so the partition stays valid but the topic distribution
+    // breaks (one topic below 12, another above 13).
+    const firstTopic = catalog[0].topic;
+    const moved = catalog.filter((e) => e.topic === firstTopic).slice(0, 2);
+    const targetTopic = TOPICS.find((t) => t !== firstTopic)!;
+    for (const ex of moved) ex.topic = targetTopic;
+    const result = validateCatalog(catalog);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === 'distribution')).toBe(true);
+    // Partition should still be fine (we only changed topic, not difficulty).
+    expect(result.issues.some((i) => i.code === 'level-partition')).toBe(false);
   });
 });
